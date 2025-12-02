@@ -1,5 +1,5 @@
 import React from "react"
-import { Flame, Target, Clock } from "lucide-react"
+import { Flame, Target, Clock, User } from "lucide-react"
 import { motion } from "framer-motion"
 import { cn, getGreeting, useTranslation, type StudyStats, type UserProfile } from "@ace-ielts/core"
 import { Card } from "../components/card"
@@ -75,6 +75,60 @@ interface ProgressCardProps {
   delay?: number
 }
 
+/**
+ * User avatar component with fallback
+ */
+interface UserAvatarProps {
+  avatarUrl?: string
+  name: string
+  size?: "sm" | "md" | "lg"
+}
+
+function UserAvatar({ avatarUrl, name, size = "md" }: UserAvatarProps) {
+  const sizeClasses = {
+    sm: "w-8 h-8 text-xs",
+    md: "w-12 h-12 text-sm",
+    lg: "w-16 h-16 text-base"
+  }
+  
+  const initials = name
+    .split(" ")
+    .map(word => word[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)
+
+  if (avatarUrl) {
+    return (
+      <motion.img
+        src={avatarUrl}
+        alt={name}
+        className={cn(
+          sizeClasses[size],
+          "rounded-full object-cover ring-2 ring-white shadow-md"
+        )}
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      />
+    )
+  }
+
+  return (
+    <motion.div
+      className={cn(
+        sizeClasses[size],
+        "rounded-full bg-gradient-to-br from-[#0E7569] to-[#0B5C52] flex items-center justify-center text-white font-semibold ring-2 ring-white shadow-md"
+      )}
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      {initials || <User className="w-1/2 h-1/2" />}
+    </motion.div>
+  )
+}
+
 function ProgressCard({ currentLevel, goalLevel, delay = 0 }: ProgressCardProps) {
   const { t } = useTranslation()
   const progress = calculateProgress(currentLevel, goalLevel)
@@ -137,24 +191,27 @@ export function WelcomeCard({ user, studyStats, className }: WelcomeCardProps) {
       transition={{ duration: 0.5, ease: "easeOut" }}
     >
       <Card className={cn("overflow-hidden py-5 px-6", className)}>
-        {/* Header: Greeting */}
-        <div className="mb-3">
-          <motion.h1
-            className="text-xl font-bold text-text-primary"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-          >
-            {t(`dashboard.greeting.${greeting}`)}, {user.name}!
-          </motion.h1>
-          <motion.p
-            className="text-sm text-text-secondary mt-0.5"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-          >
-            {t(`dashboard.encouragement.${encouragementKey}`)}
-          </motion.p>
+        {/* Header: Avatar + Greeting */}
+        <div className="flex items-center gap-4 mb-3">
+          <UserAvatar avatarUrl={user.avatarUrl} name={user.name} size="md" />
+          <div>
+            <motion.h1
+              className="text-xl font-bold text-text-primary"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+            >
+              {t(`dashboard.greeting.${greeting}`)}, {user.name}!
+            </motion.h1>
+            <motion.p
+              className="text-sm text-text-secondary mt-0.5"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+            >
+              {t(`dashboard.encouragement.${encouragementKey}`)}
+            </motion.p>
+          </div>
         </div>
 
         {/* Main content: Progress card + Stats badges */}

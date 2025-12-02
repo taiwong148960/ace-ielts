@@ -9,6 +9,8 @@ import {
   dashboardApi,
   useNavigation,
   useTranslation,
+  useAuth,
+  userToProfile,
   type BlogArticle,
   type DashboardData,
   type TakeawayStats
@@ -55,6 +57,7 @@ function ErrorState({ message }: { message: string }) {
 export function Dashboard() {
   const { t } = useTranslation()
   const navigation = useNavigation()
+  const { user: authUser } = useAuth()
   
   const [data, setData] = useState<DashboardData | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -63,6 +66,19 @@ export function Dashboard() {
     const fetchData = async () => {
       try {
         const dashboardData = await dashboardApi.getDashboardData()
+        
+        // If user is authenticated, merge real user data with dashboard data
+        if (authUser) {
+          const profile = userToProfile(authUser)
+          dashboardData.user = {
+            ...dashboardData.user,
+            id: profile.id,
+            name: profile.name,
+            email: profile.email,
+            avatarUrl: profile.avatarUrl || undefined
+          }
+        }
+        
         setData(dashboardData)
       } catch (err) {
         setError(
@@ -72,7 +88,7 @@ export function Dashboard() {
     }
 
     fetchData()
-  }, [t])
+  }, [t, authUser])
 
   const handleTimeRangeChange = async (
     range: TakeawayStats["timeRange"]

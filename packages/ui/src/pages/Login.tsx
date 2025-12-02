@@ -3,11 +3,11 @@
  * OAuth login with GitHub and Google
  */
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { motion } from "framer-motion"
 import { Github, Loader2 } from "lucide-react"
-import { useAuth, type OAuthProvider } from "@ace-ielts/core"
+import { useAuth, useNavigation, type OAuthProvider } from "@ace-ielts/core"
 import { Button } from "../components/button"
 import { Card, CardContent, CardHeader } from "../components/card"
 
@@ -47,11 +47,19 @@ function GoogleIcon({ className }: { className?: string }) {
  */
 export function Login() {
   const { t } = useTranslation()
-  const { signInWithOAuth, isLoading: authLoading } = useAuth()
+  const { signInWithOAuth, isLoading: authLoading, isAuthenticated } = useAuth()
+  const navigation = useNavigation()
   const [loadingProvider, setLoadingProvider] = useState<OAuthProvider | null>(
     null
   )
   const [error, setError] = useState<string | null>(null)
+
+  // Redirect to dashboard if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      navigation.navigate("/dashboard")
+    }
+  }, [isAuthenticated, authLoading, navigation])
 
   const handleOAuthLogin = async (provider: OAuthProvider) => {
     try {
