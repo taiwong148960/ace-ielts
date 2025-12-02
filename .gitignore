@@ -2,8 +2,9 @@
 node_modules/
 
 # Build output
-build/
-.plasmo/
+app/web/dist
+app/extension/build/
+app/extension/.plasmo/
 
 # IDE
 .idea/
