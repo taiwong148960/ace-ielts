@@ -126,7 +126,11 @@ export function CreateBookDialog({
   // Form state
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
-  const [coverColor, setCoverColor] = useState(DEFAULT_BOOK_COVER_COLOR)
+  const [coverColor, setCoverColor] = useState<string>(
+    () => BOOK_COVER_COLORS[Math.floor(Math.random() * BOOK_COVER_COLORS.length)]
+  )
+  const [coverText, setCoverText] = useState("")
+  const [coverTextEdited, setCoverTextEdited] = useState(false)
   const [wordsText, setWordsText] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -156,8 +160,7 @@ export function CreateBookDialog({
       return
     }
 
-    // Check file size (max 1MB)
-    if (file.size > 1024 * 1024) {
+    if (file.size > 1024 * 100) {
       setError(t("vocabulary.createBook.errors.fileTooLarge"))
       return
     }
@@ -195,6 +198,11 @@ export function CreateBookDialog({
       return
     }
 
+    if (parsedWords.length > 10000) {
+      setError(t("vocabulary.createBook.errors.tooManyWords"))
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
@@ -202,6 +210,7 @@ export function CreateBookDialog({
         name: name.trim(),
         description: description.trim() || undefined,
         cover_color: coverColor,
+        cover_text: coverText.trim() || undefined,
         book_type: "custom",
         words: parsedWords
       }
@@ -211,7 +220,9 @@ export function CreateBookDialog({
       // Reset form
       setName("")
       setDescription("")
-      setCoverColor(DEFAULT_BOOK_COVER_COLOR)
+      setCoverColor(
+        BOOK_COVER_COLORS[Math.floor(Math.random() * BOOK_COVER_COLORS.length)]
+      )
       setWordsText("")
 
       // Close dialog and notify parent
@@ -230,9 +241,19 @@ export function CreateBookDialog({
     if (!newOpen) {
       setName("")
       setDescription("")
-      setCoverColor(DEFAULT_BOOK_COVER_COLOR)
+      setCoverColor(
+        BOOK_COVER_COLORS[Math.floor(Math.random() * BOOK_COVER_COLORS.length)]
+      )
+      setCoverText("")
       setWordsText("")
+      setCoverTextEdited(false)
       setError(null)
+    } else {
+      setCoverColor(
+        BOOK_COVER_COLORS[Math.floor(Math.random() * BOOK_COVER_COLORS.length)]
+      )
+      setCoverTextEdited(false)
+      if (!name.trim()) setCoverText("")
     }
     onOpenChange(newOpen)
   }
@@ -259,7 +280,13 @@ export function CreateBookDialog({
             <Input
               id="book-name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value
+                setName(v)
+                if (!coverTextEdited) {
+                  setCoverText(v)
+                }
+              }}
               placeholder={t("vocabulary.createBook.namePlaceholder")}
               maxLength={100}
               disabled={isSubmitting}
@@ -278,6 +305,25 @@ export function CreateBookDialog({
               placeholder={t("vocabulary.createBook.descriptionPlaceholder")}
               maxLength={200}
               disabled={isSubmitting}
+            />
+          </div>
+
+          {/* Cover Text */}
+          <div className="space-y-2">
+            <Label htmlFor="cover-text">
+              {t("vocabulary.createBook.coverTextLabel")}
+            </Label>
+            <Input
+              id="cover-text"
+              value={coverText}
+              onChange={(e) => {
+                setCoverText(e.target.value)
+                setCoverTextEdited(true)
+              }}
+              placeholder={t("vocabulary.createBook.coverTextPlaceholder")}
+              maxLength={100}
+              disabled={isSubmitting}
+              className="font-medium italic"
             />
           </div>
 
@@ -363,7 +409,12 @@ export function CreateBookDialog({
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || !name.trim() || parsedWords.length === 0}
+              disabled={
+                isSubmitting ||
+                !name.trim() ||
+                parsedWords.length === 0 ||
+                parsedWords.length > 10000
+              }
               className="gap-2"
             >
               {isSubmitting ? (
@@ -386,4 +437,3 @@ export function CreateBookDialog({
 }
 
 export default CreateBookDialog
-

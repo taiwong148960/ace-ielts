@@ -12,7 +12,7 @@ import type {
   CreateVocabularyBookInput,
   UpdateVocabularyBookInput
 } from "../types/vocabulary"
-import { DEFAULT_BOOK_COVER_COLOR } from "../types/vocabulary"
+import { DEFAULT_BOOK_COVER_COLOR, BOOK_COVER_COLORS } from "../types/vocabulary"
 
 /**
  * Vocabulary API interface
@@ -232,7 +232,8 @@ export async function createBook(
   const bookData = {
     name: input.name.trim(),
     description: input.description?.trim() || null,
-    cover_color: input.cover_color || DEFAULT_BOOK_COVER_COLOR,
+    cover_color: input.cover_color || BOOK_COVER_COLORS[Math.floor(Math.random() * BOOK_COVER_COLORS.length)],
+    cover_text: input.cover_text?.trim() || null,
     book_type: input.book_type || "custom",
     is_system_book: false,
     user_id: userId,
@@ -315,6 +316,7 @@ export async function updateBook(
   if (input.name !== undefined) updateData.name = input.name.trim()
   if (input.description !== undefined) updateData.description = input.description?.trim() || null
   if (input.cover_color !== undefined) updateData.cover_color = input.cover_color
+  if (input.cover_text !== undefined) updateData.cover_text = input.cover_text?.trim() || null
 
   const { data, error } = await supabase
     .from("vocabulary_books")
@@ -521,4 +523,3 @@ export const vocabularyApi: IVocabularyApi = {
 }
 
 export default vocabularyApi
-

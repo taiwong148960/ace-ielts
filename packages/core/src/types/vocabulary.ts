@@ -21,6 +21,7 @@ export interface VocabularyBook {
   name: string
   description: string | null
   cover_color: string
+  cover_text?: string | null
   book_type: VocabularyBookType
   is_system_book: boolean
   user_id: string | null // null for system books
@@ -101,6 +102,7 @@ export interface CreateVocabularyBookInput {
   name: string
   description?: string
   cover_color?: string
+  cover_text?: string
   book_type?: VocabularyBookType
   words: string[] // Array of words/phrases to add
 }
@@ -112,6 +114,7 @@ export interface UpdateVocabularyBookInput {
   name?: string
   description?: string
   cover_color?: string
+  cover_text?: string
 }
 
 /**
@@ -146,4 +149,3 @@ export const BOOK_COVER_COLORS = [
  * Default cover color for new books
  */
 export const DEFAULT_BOOK_COVER_COLOR = BOOK_COVER_COLORS[3]
-

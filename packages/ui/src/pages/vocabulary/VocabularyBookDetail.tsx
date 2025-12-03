@@ -10,12 +10,10 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
-  Flame,
   GraduationCap,
   PlayCircle,
   Sparkles,
-  Target,
-  TrendingUp
+  Target
 } from "lucide-react"
 import { cn, useNavigation, useTranslation } from "@ace-ielts/core"
 
@@ -26,9 +24,11 @@ import {
   CardHeader,
   CardTitle,
   Button,
-  fadeInUp,
-  staggerContainer,
-  staggerItem
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+  fadeInUp
 } from "../../components"
 
 /**
@@ -84,47 +84,6 @@ const mockBookDetail = {
   ] as WordProgress[]
 }
 
-/**
- * Stat card component
- */
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  subValue,
-  color,
-  index
-}: {
-  icon: React.ElementType
-  label: string
-  value: string | number
-  subValue?: string
-  color: string
-  index: number
-}) {
-  return (
-    <motion.div
-      variants={staggerItem}
-      custom={index}
-      initial="hidden"
-      animate="visible"
-    >
-      <Card className="relative overflow-hidden">
-        <div className={cn("absolute top-0 right-0 w-20 h-20 -mr-6 -mt-6 rounded-full opacity-10", color)} />
-        <CardContent className="pt-4">
-          <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center mb-3", color.replace("bg-", "bg-opacity-15 text-"))}>
-            <Icon className="h-5 w-5" />
-          </div>
-          <p className="text-sm text-text-secondary mb-1">{label}</p>
-          <p className="text-2xl font-bold text-text-primary">{value}</p>
-          {subValue && (
-            <p className="text-xs text-text-tertiary mt-1">{subValue}</p>
-          )}
-        </CardContent>
-      </Card>
-    </motion.div>
-  )
-}
 
 /**
  * Progress ring component
@@ -219,6 +178,60 @@ function WordListItem({ word, index }: { word: WordProgress; index: number }) {
   )
 }
 
+function ForgettingCurveChart({
+  masteredS = 30,
+  learningS = 7,
+  newS = 2,
+  days = 30,
+  width = 300,
+  height = 160
+}: {
+  masteredS?: number
+  learningS?: number
+  newS?: number
+  days?: number
+  width?: number
+  height?: number
+}) {
+  const { t } = useTranslation()
+  const pad = 16
+  const w = width
+  const h = height
+  const toX = (d: number) => pad + (d / days) * (w - pad * 2)
+  const toY = (r: number) => pad + (1 - r) * (h - pad * 2)
+  const retention = (d: number, S: number) => Math.exp(-d / S)
+  const buildPath = (S: number) => {
+    const pts = Array.from({ length: days + 1 }, (_, i) => ({ x: toX(i), y: toY(retention(i, S)) }))
+    return `M ${pts[0].x},${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x},${p.y}`).join(" ")
+  }
+  const gridY = [0, 0.25, 0.5, 0.75, 1]
+  const gridX = [0, 5, 10, 20, 30]
+  return (
+    <div className="w-full">
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="text-neutral-border">
+        <rect x={pad} y={pad} width={w - pad * 2} height={h - pad * 2} rx={8} className="fill-transparent" />
+        {gridY.map(g => (
+          <line key={`gy-${g}`} x1={pad} x2={w - pad} y1={toY(g)} y2={toY(g)} className="stroke-neutral-border" strokeDasharray="4 4" />
+        ))}
+        {gridX.map(g => (
+          <line key={`gx-${g}`} y1={pad} y2={h - pad} x1={toX(g)} x2={toX(g)} className="stroke-neutral-border" strokeDasharray="4 4" />
+        ))}
+        <path d={buildPath(masteredS)} className="stroke-emerald-600 fill-none" strokeWidth={2} />
+        <path d={buildPath(learningS)} className="stroke-amber-600 fill-none" strokeWidth={2} />
+        <path d={buildPath(newS)} className="stroke-slate-600 fill-none" strokeWidth={2} />
+      </svg>
+        <div className="mt-2 flex items-center justify-between text-xs text-text-secondary">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-emerald-600" />{t("vocabulary.bookDetail.mastered")}</div>
+            <div className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-amber-600" />{t("vocabulary.bookDetail.learning")}</div>
+            <div className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-slate-600" />{t("vocabulary.bookDetail.new")}</div>
+          </div>
+          <span>0–30d</span>
+        </div>
+    </div>
+  )
+}
+
 /**
  * Main VocabularyBookDetail page component
  */
@@ -228,6 +241,8 @@ export function VocabularyBookDetail() {
   const book = mockBookDetail
 
   const masteredPercent = Math.round((book.stats.mastered / book.stats.totalWords) * 100)
+  const learningPercent = Math.round((book.stats.learning / book.stats.totalWords) * 100)
+  const newPercent = Math.round((book.stats.newWords / book.stats.totalWords) * 100)
 
   const handleBack = () => {
     navigation.navigate("/vocabulary")
@@ -312,86 +327,118 @@ export function VocabularyBookDetail() {
                     <span className="text-text-secondary">
                       {t("vocabulary.wordsCount", { count: book.stats.totalWords })}
                     </span>
-                    <span className="text-primary font-medium">
-                      {t("vocabulary.progress", { percent: masteredPercent })}
-                    </span>
                   </div>
-                  <div className="h-3 bg-neutral-border rounded-full overflow-hidden flex">
-                    <motion.div
-                      className="bg-emerald-500 h-full"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(book.stats.mastered / book.stats.totalWords) * 100}%` }}
-                      transition={{ duration: 0.8, ease: "easeOut" }}
-                    />
-                    <motion.div
-                      className="bg-amber-500 h-full"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(book.stats.learning / book.stats.totalWords) * 100}%` }}
-                      transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-                    />
-                  </div>
+                  <TooltipProvider delayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="h-3 bg-neutral-border rounded-full overflow-hidden flex">
+                          <motion.div
+                            className="bg-emerald-500 h-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(book.stats.mastered / book.stats.totalWords) * 100}%` }}
+                            transition={{ duration: 0.8, ease: "easeOut" }}
+                          />
+                          <motion.div
+                            className="bg-amber-500 h-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(book.stats.learning / book.stats.totalWords) * 100}%` }}
+                            transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
+                          />
+                          <motion.div
+                            className="bg-slate-400 h-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(book.stats.newWords / book.stats.totalWords) * 100}%` }}
+                            transition={{ duration: 0.8, ease: "easeOut", delay: 0.4 }}
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <div className="space-y-1 text-sm">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            <span>{t("vocabulary.bookDetail.mastered")}: {masteredPercent}%</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Brain className="h-4 w-4 text-amber-600" />
+                            <span>{t("vocabulary.bookDetail.learning")}: {learningPercent}%</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-slate-600" />
+                            <span>{t("vocabulary.bookDetail.new")}: {newPercent}%</span>
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Today's Goal Card */}
-            <Card className={cn("relative overflow-hidden", book.coverColor)}>
-              <div className="absolute inset-0 bg-black/20" />
-              <CardContent className="relative pt-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
-                      <Calendar className="h-5 w-5" />
-                      {t("vocabulary.bookDetail.todayGoal")}
-                    </h3>
-                    <div className="space-y-1 text-sm text-white/90">
-                      <p>{t("vocabulary.bookDetail.wordsToReview", { count: book.stats.todayReview })}</p>
-                      <p>{t("vocabulary.bookDetail.newWordsToday", { count: book.stats.todayNew })}</p>
-                      <p className="flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        {t("vocabulary.bookDetail.estimatedTime", { minutes: book.stats.estimatedMinutes })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={handleStartLearning}
-                    className="bg-white text-primary hover:bg-white/90 gap-2 shadow-lg"
-                    size="lg"
-                  >
-                    <PlayCircle className="h-5 w-5" />
-                    {t("vocabulary.bookDetail.startSession")}
-                  </Button>
-                </div>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Target className="h-4 w-4 text-primary" />
+                  {t("vocabulary.bookDetail.forgettingCurve")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-3 text-xs text-text-secondary">{t("vocabulary.bookDetail.retentionProbability")}</div>
+                <ForgettingCurveChart
+                  masteredS={30}
+                  learningS={7}
+                  newS={2}
+                  days={30}
+                  width={320}
+                  height={160}
+                />
+                <div className="mt-3 text-xs text-text-tertiary">{t("vocabulary.bookDetail.fsrsHint")}</div>
               </CardContent>
             </Card>
+
+            {/* Today's Goal Card moved to right column */}
           </div>
 
           {/* Right Column - Stats & Words */}
           <div className="space-y-lg">
-            {/* Quick Stats */}
-            <motion.div
-              className="grid grid-cols-2 gap-4"
-              variants={staggerContainer}
-              initial="hidden"
-              animate="visible"
-            >
-              <StatCard
-                icon={Flame}
-                label="Streak"
-                value={book.stats.streak}
-                subValue="days"
-                color="bg-orange-500"
-                index={0}
-              />
-              <StatCard
-                icon={TrendingUp}
-                label="Accuracy"
-                value={`${book.stats.accuracy}%`}
-                color="bg-emerald-500"
-                index={1}
-              />
-            </motion.div>
+            {/* Today's Goal Card (compact, top-right) */}
+            <Card className={cn("relative overflow-hidden", book.coverColor)}>
+              <div className="absolute inset-0 bg-gradient-to-br from-black/10 via-black/5 to-transparent" />
+              <CardContent className="relative p-4 text-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold mb-1 flex items-center gap-1">
+                      <Calendar className="h-4 w-4" />
+                      {t("vocabulary.bookDetail.todayGoal")}
+                    </h3>
+                    <div className="text-xs text-white/90 truncate flex items-center gap-2">
+                      <span className="flex items-center gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {t("vocabulary.bookDetail.wordsToReview", { count: book.stats.todayReview })}
+                      </span>
+                      <span className="opacity-60">•</span>
+                      <span className="flex items-center gap-1">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        {t("vocabulary.bookDetail.newWordsToday", { count: book.stats.todayNew })}
+                      </span>
+                      <span className="opacity-60">•</span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
+                        {t("vocabulary.bookDetail.estimatedTime", { minutes: book.stats.estimatedMinutes })}
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleStartLearning}
+                    className="bg-white text-primary hover:bg-white/90 gap-1 shadow-md h-8 px-2"
+                    size="sm"
+                  >
+                    <PlayCircle className="h-4 w-4" />
+                    <span className="hidden md:inline">{t("vocabulary.bookDetail.startSession")}</span>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
 
             {/* Recent Words */}
             <Card>
@@ -430,4 +477,3 @@ export function VocabularyBookDetail() {
 }
 
 export default VocabularyBookDetail
-

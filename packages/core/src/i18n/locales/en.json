@@ -129,6 +129,8 @@
       "namePlaceholder": "e.g., IELTS Speaking Topics",
       "descriptionLabel": "Description (optional)",
       "descriptionPlaceholder": "Brief description of this vocabulary book",
+      "coverTextLabel": "Cover Text (defaults to book name)",
+      "coverTextPlaceholder": "e.g., IELTS Speaking Theme",
       "coverColorLabel": "Cover Color",
       "wordsLabel": "Word List",
       "wordsPlaceholder": "Enter words, one per line:\napple\nbanana\norange\n...",
@@ -142,7 +144,8 @@
         "nameRequired": "Please enter a book name",
         "wordsRequired": "Please add at least one word",
         "invalidFileType": "Please upload a .txt file",
-        "fileTooLarge": "File is too large (max 1MB)",
+        "fileTooLarge": "File is too large (max 100KB)",
+        "tooManyWords": "Too many words (max 10,000)",
         "readError": "Failed to read file",
         "createFailed": "Failed to create book. Please try again."
       }
@@ -153,6 +156,9 @@
       "mastered": "Mastered",
       "learning": "Learning",
       "new": "New",
+      "forgettingCurve": "Forgetting Curve",
+      "retentionProbability": "Retention Probability",
+      "fsrsHint": "Will be optimized with FSRS spaced repetition",
       "todayGoal": "Today's Goal",
       "wordsToReview": "{{count}} words to review",
       "newWordsToday": "{{count}} new words",

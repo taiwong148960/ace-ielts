@@ -105,20 +105,18 @@ function VocabularyBookCard({
         className="group cursor-pointer hover:shadow-lg transition-all duration-300 overflow-hidden"
         onClick={onClick}
       >
-        {/* Book Cover Header */}
         <div className={cn("h-24 relative", book.cover_color)}>
           <div className="absolute inset-0 bg-black/10" />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <BookIcon
-              type={book.book_type}
-              className="h-12 w-12 text-white/90"
-            />
+          <div className="absolute inset-0 flex items-center justify-center px-3">
+            <span className="text-white/90 font-semibold text-base sm:text-lg md:text-xl truncate">
+              {book.cover_text || book.name}
+            </span>
           </div>
-          {/* Decorative pattern */}
           <div className="absolute inset-0 opacity-20">
             <div className="absolute top-2 right-2 w-16 h-16 border border-white/30 rounded-full" />
             <div className="absolute bottom-2 left-2 w-8 h-8 border border-white/30 rounded-full" />
           </div>
+          
         </div>
 
         <CardContent className="pt-4">

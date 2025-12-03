@@ -129,6 +129,8 @@
       "namePlaceholder": "例如：雅思口语话题词汇",
       "descriptionLabel": "描述（可选）",
       "descriptionPlaceholder": "简要描述这本词书",
+      "coverTextLabel": "封面文字（默认使用词本名称）",
+      "coverTextPlaceholder": "例如：雅思口语主题",
       "coverColorLabel": "封面颜色",
       "wordsLabel": "词汇列表",
       "wordsPlaceholder": "输入单词，每行一个：\napple\nbanana\norange\n...",
@@ -142,7 +144,8 @@
         "nameRequired": "请输入词本名称",
         "wordsRequired": "请至少添加一个单词",
         "invalidFileType": "请上传 .txt 文件",
-        "fileTooLarge": "文件过大（最大 1MB）",
+        "fileTooLarge": "文件过大（最大 100KB）",
+        "tooManyWords": "单词数量超过上限（最多 10000）",
         "readError": "读取文件失败",
         "createFailed": "创建词本失败，请重试。"
       }
@@ -153,6 +156,9 @@
       "mastered": "已掌握",
       "learning": "学习中",
       "new": "未学习",
+      "forgettingCurve": "遗忘曲线",
+      "retentionProbability": "记忆保持概率",
+      "fsrsHint": "后续将基于 FSRS 间隔重复优化",
       "todayGoal": "今日目标",
       "wordsToReview": "{{count}} 个待复习",
       "newWordsToday": "{{count}} 个新词",
