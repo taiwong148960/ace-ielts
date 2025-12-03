@@ -8,15 +8,13 @@ export {}
 // Listen for extension installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
-    console.log("AceIELTS extension installed")
     // Initialize default settings
     chrome.storage.local.set({
       "ace-ielts-language": "en",
       "ace-ielts-initialized": true
     })
-  } else if (details.reason === "update") {
-    console.log("AceIELTS extension updated")
   }
+  // Update handling can be added here if needed
 })
 
 // Handle messages from content scripts or popup

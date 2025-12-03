@@ -1,0 +1,8 @@
+# Run linting
+echo "🔍 Running linter..."
+pnpm lint
+
+# Run type checking
+echo "🔍 Running type check..."
+pnpm typecheck
+

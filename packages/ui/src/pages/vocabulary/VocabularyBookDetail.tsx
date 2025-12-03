@@ -182,7 +182,13 @@ function ForgettingCurveChart({
   }))
 
   // Custom tooltip formatter
-  const CustomTooltip = ({ active, payload }: any) => {
+  interface TooltipPayloadItem {
+    dataKey: string
+    value: number
+    color: string
+    payload: { day: number }
+  }
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: TooltipPayloadItem[] }) => {
     if (!active || !payload || payload.length === 0) return null
 
     const day = payload[0].payload.day
@@ -192,7 +198,7 @@ function ForgettingCurveChart({
         <p className="text-sm font-medium text-text-primary border-b pb-2">
           {t("vocabulary.bookDetail.tooltipDays", { days: day })}
         </p>
-        {payload.map((entry: any) => {
+        {payload.map((entry) => {
           const labelMap: Record<string, string> = {
             mastered: t("vocabulary.bookDetail.tooltipMastered", { strength: masteredS }),
             learning: t("vocabulary.bookDetail.tooltipLearning", { strength: learningS }),

@@ -1,6 +1,7 @@
 {
   "name": "ace-ielts",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "description": "AceIELTS - IELTS Preparation App (Monorepo)",
   "author": "AceIELTS Team",
@@ -16,14 +17,27 @@
     "build:extension": "pnpm --filter @ace-ielts/extension build",
     "build:all": "pnpm -r build",
     "package:extension": "pnpm --filter @ace-ielts/extension package",
-    "lint": "pnpm -r lint",
+    "lint": "eslint packages/ app/ --max-warnings 0",
+    "lint:fix": "eslint packages/ app/ --fix",
     "typecheck": "pnpm -r typecheck",
-    "clean": "pnpm -r clean && rimraf node_modules"
+    "clean": "pnpm -r clean && rimraf node_modules",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-conventional": "^20.0.0",
+    "@eslint/js": "^9.39.1",
     "@types/node": "^22.9.0",
+    "@typescript-eslint/eslint-plugin": "^8.48.1",
+    "@typescript-eslint/parser": "^8.48.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "husky": "^9.1.7",
     "rimraf": "^6.0.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.48.1"
   },
   "engines": {
     "node": ">=18.0.0",

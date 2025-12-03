@@ -117,8 +117,7 @@ export function AuthProvider({
       })
 
     // Subscribe to auth changes
-    const { data: subscription } = onAuthStateChange((event, session) => {
-      console.log("Auth state changed:", event)
+    const { data: subscription } = onAuthStateChange((_event, session) => {
       updateAuthState(session as Session | null, false)
     })
 

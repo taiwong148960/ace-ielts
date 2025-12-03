@@ -19,6 +19,33 @@ import type {
 import { GRADE_TO_RATING, type SpacedRepetitionGrade } from "../types/vocabulary"
 
 /**
+ * Supabase query result type for word progress with joined vocabulary_words
+ * Note: vocabulary_words is typed as single object (many-to-one relationship)
+ */
+interface WordProgressWithWord {
+  word_id: string
+  state: string
+  stability: number
+  due_at: string | null
+  last_review_at: string | null
+  lapses: number
+  vocabulary_words: {
+    id: string
+    word: string
+    phonetic: string | null
+    definition: string
+  }
+}
+
+/**
+ * Helper to cast Supabase query results to WordProgressWithWord[]
+ * This is needed because Supabase's type inference doesn't correctly handle !inner joins
+ */
+function asWordProgressList(data: unknown[] | null): WordProgressWithWord[] {
+  return (data || []) as WordProgressWithWord[]
+}
+
+/**
  * Get a book with full details for the book detail page
  */
 export async function getBookWithDetails(
@@ -191,7 +218,7 @@ export async function getTodayLearningSession(
     .order("due_at")
     .limit(reviewLimit)
 
-  const reviewWords: WordWithProgress[] = (dueProgress || []).map((p: any) => ({
+  const reviewWords: WordWithProgress[] = asWordProgressList(dueProgress).map((p) => ({
     id: p.word_id,
     word: p.vocabulary_words.word,
     phonetic: p.vocabulary_words.phonetic,
@@ -272,7 +299,7 @@ export async function getRecentWords(
     .order("last_review_at", { ascending: false })
     .limit(limit)
 
-  return (data || []).map((p: any) => ({
+  return asWordProgressList(data).map((p) => ({
     id: p.word_id,
     word: p.vocabulary_words.word,
     phonetic: p.vocabulary_words.phonetic,
@@ -320,7 +347,7 @@ export async function getDifficultWords(
     .order("stability", { ascending: true })
     .limit(limit)
 
-  return (data || []).map((p: any) => ({
+  return asWordProgressList(data).map((p) => ({
     id: p.word_id,
     word: p.vocabulary_words.word,
     phonetic: p.vocabulary_words.phonetic,

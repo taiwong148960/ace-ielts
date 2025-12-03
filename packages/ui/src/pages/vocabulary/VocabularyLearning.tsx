@@ -420,9 +420,8 @@ export function VocabularyLearning() {
     navigation.navigate(`/vocabulary/${session.bookId}`)
   }
 
-  const handleGrade = (grade: "forgot" | "hard" | "good" | "easy") => {
-    // Will implement spaced repetition logic later
-    console.log("Graded:", grade)
+  const handleGrade = (_grade: "forgot" | "hard" | "good" | "easy") => {
+    // TODO: Will implement spaced repetition logic later
   }
 
   const handleNavigate = (itemId: string) => {
