@@ -20,14 +20,14 @@ setLanguageStorageAdapter(webLanguageStorageAdapter)
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (supabaseUrl && supabaseAnonKey) {
-  initializeSupabase({
-    supabaseUrl,
-    supabaseAnonKey
-  })
-} else {
-  console.warn("Supabase environment variables not configured. Auth will not work.")
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY")
 }
+
+initializeSupabase({
+  supabaseUrl,
+  supabaseAnonKey
+})
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -40,5 +40,4 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </PlatformProvider>
   </React.StrictMode>
 )
-
 
