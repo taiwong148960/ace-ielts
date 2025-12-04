@@ -52,6 +52,12 @@ export interface VocabularyBook {
   is_system_book: boolean
   user_id: string | null // null for system books
   word_count: number
+  import_status: ImportStatus | null
+  import_progress: number | null
+  import_total: number | null
+  import_started_at: string | null
+  import_completed_at: string | null
+  import_error: string | null
   created_at: string
   updated_at: string
 }
@@ -67,6 +73,9 @@ export interface VocabularyWord {
   definition: string | null
   example_sentence: string | null
   notes: string | null
+  word_details: WordDetailData | null // Rich word data from Gemini API
+  import_status: ImportStatus | null
+  import_error: string | null
   created_at: string
   updated_at: string
 }
@@ -364,4 +373,50 @@ export interface UpdateBookSettingsInput {
   daily_review_limit?: number
   learning_mode?: LearningMode
   study_order?: StudyOrder
+}
+
+/**
+ * Import status for vocabulary book import workflow
+ */
+export type ImportStatus = "pending" | "importing" | "completed" | "failed"
+
+/**
+ * Import progress tracking
+ */
+export interface ImportProgress {
+  status: ImportStatus
+  current: number
+  total: number
+  startedAt?: string
+  completedAt?: string
+  error?: string
+}
+
+/**
+ * Rich word detail data from Gemini API
+ */
+export interface WordDetailData {
+  definitions: Array<{
+    partOfSpeech: string
+    meaning: string
+  }>
+  exampleSentences: Array<{
+    sentence: string
+    source: "ielts" | "daily" | "movie" | "tv"
+    translation?: string
+  }>
+  synonyms?: string[]
+  antonyms?: string[]
+  relatedWords?: {
+    baseForm?: string
+    comparative?: string
+    superlative?: string
+    pastTense?: string
+    pastParticiple?: string
+    presentParticiple?: string
+    plural?: string
+  }
+  easilyConfused?: string[]
+  usageFrequency?: "common" | "uncommon" | "rare"
+  tenses?: string[] // For verbs
 }

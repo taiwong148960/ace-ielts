@@ -57,3 +57,26 @@ export {
   formatNextReview
 } from "./vocabulary-detail"
 
+// Vocabulary Import
+export {
+  startImport,
+  getImportProgress,
+  retryFailedWords,
+  getFailedWordsErrors
+} from "./vocabulary-import"
+
+// Gemini API
+export {
+  enrichWord,
+  enrichWordWithRetry
+} from "./gemini"
+
+// User Settings
+export {
+  getUserSettings,
+  getOrCreateUserSettings,
+  updateUserSettings,
+  getLLMApiKey,
+  hasLLMApiKey
+} from "./user-settings"
+

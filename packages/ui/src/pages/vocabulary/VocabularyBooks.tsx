@@ -13,7 +13,10 @@ import {
   Clock,
   Sparkles,
   RefreshCw,
-  Settings
+  Settings,
+  AlertCircle,
+  RotateCw,
+  Loader2
 } from "lucide-react"
 import {
   cn,
@@ -21,7 +24,9 @@ import {
   useTranslation,
   useAuth,
   useVocabularyBooks,
-  type VocabularyBookWithProgress
+  useVocabularyImport,
+  type VocabularyBookWithProgress,
+  type ImportStatus
 } from "@ace-ielts/core"
 
 import { MainLayout } from "../../layout"
@@ -30,12 +35,20 @@ import {
   CardContent,
   Button,
   Progress,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
   fadeInUp,
   staggerContainer,
   staggerItem
 } from "../../components"
 import { CreateBookDialog } from "./CreateBookDialog"
 import { BookSettingsDialog } from "./BookSettingsDialog"
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
 
 /**
  * Format last studied time
@@ -57,6 +70,237 @@ function formatLastStudied(date: string | null | undefined): string | null {
   return studied.toLocaleDateString()
 }
 
+// ============================================================================
+// Import Status Component
+// ============================================================================
+
+interface ImportStatusDisplayProps {
+  status: ImportStatus
+  progress: number
+  total: number
+  error: string | null
+  isRetrying: boolean
+  onRetry: () => void
+}
+
+/**
+ * Import status display component
+ * Handles pending, importing, and failed states with detailed tooltip information
+ */
+function ImportStatusDisplay({
+  status,
+  progress,
+  total,
+  error,
+  isRetrying,
+  onRetry
+}: ImportStatusDisplayProps) {
+  const { t } = useTranslation()
+  const percent = total > 0 ? Math.round((progress / total) * 100) : 0
+  const failedCount = total - progress
+
+  // Pending state - preparing to import
+  if (status === "pending") {
+    return (
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="mb-3 p-3 bg-gradient-to-r from-ai-50 to-primary-50 border border-ai-200/60 rounded-lg cursor-help">
+              {/* Header with spinning icon */}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Loader2 className="h-4 w-4 text-ai animate-spin" />
+                </div>
+                <span className="text-sm font-semibold text-ai">
+                  {t("vocabulary.import.pending")}
+                </span>
+              </div>
+
+              {/* Indeterminate progress bar */}
+              <div className="mt-2 h-2 bg-neutral-border/50 rounded-full overflow-hidden">
+                <div className="h-full w-1/3 bg-gradient-to-r from-primary via-ai to-ai-light rounded-full animate-pulse" 
+                  style={{ animation: 'shimmer 1.5s ease-in-out infinite' }}
+                />
+              </div>
+
+              {/* Status text */}
+              <p className="text-xs text-ai/80 mt-2 font-medium">
+                {t("vocabulary.import.pendingText")}
+              </p>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-xs">
+            <div className="space-y-2 p-1">
+              <p className="font-semibold text-sm">
+                {t("vocabulary.import.tooltipPending")}
+              </p>
+              <p className="text-xs text-text-secondary">
+                {t("vocabulary.import.tooltipPendingDesc")}
+              </p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+
+  if (status === "importing") {
+    return (
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="mb-3 p-3 bg-gradient-to-r from-ai-50 to-primary-50 border border-ai-200/60 rounded-lg cursor-help">
+              {/* Header with spinning icon and percentage */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Loader2 className="h-4 w-4 text-ai animate-spin" />
+                    <div className="absolute inset-0 animate-ping opacity-30">
+                      <Loader2 className="h-4 w-4 text-ai" />
+                    </div>
+                  </div>
+                  <span className="text-sm font-semibold text-ai">
+                    {t("vocabulary.import.importing")}
+                  </span>
+                </div>
+                <span className="text-sm font-bold text-ai tabular-nums">
+                  {percent}%
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <Progress 
+                value={percent} 
+                variant="ai" 
+                size="sm" 
+                animated 
+                glow
+                className="h-2" 
+              />
+
+              {/* Progress text */}
+              <p className="text-xs text-ai/80 mt-2 font-medium">
+                {t("vocabulary.import.progressText", { current: progress, total })}
+              </p>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-xs">
+            <div className="space-y-2 p-1">
+              <p className="font-semibold text-sm">
+                {t("vocabulary.import.tooltipImporting")}
+              </p>
+              <div className="space-y-1 text-xs text-text-secondary">
+                <p>{t("vocabulary.import.tooltipTotal", { total })}</p>
+                <p>{t("vocabulary.import.tooltipCompleted", { completed: progress })}</p>
+                <p>{t("vocabulary.import.tooltipRemaining", { remaining: total - progress })}</p>
+              </div>
+              <p className="text-xs text-text-tertiary italic pt-1 border-t border-neutral-border">
+                {t("vocabulary.import.tooltipWait")}
+              </p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+
+  if (status === "failed") {
+    return (
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="mb-3 p-3 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200/60 rounded-lg cursor-help">
+              {/* Header with error icon and retry button */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-red-600" />
+                  <span className="text-sm font-semibold text-red-700">
+                    {t("vocabulary.import.failed")}
+                  </span>
+                </div>
+                {isRetrying ? (
+                  <div className="flex items-center gap-1.5 text-red-600">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    <span className="text-xs font-medium">
+                      {t("vocabulary.import.retrying")}
+                    </span>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2.5 text-xs font-medium text-red-700 hover:text-red-800 hover:bg-red-100/80 gap-1.5"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onRetry()
+                    }}
+                  >
+                    <RotateCw className="h-3.5 w-3.5" />
+                    {t("vocabulary.import.retry")}
+                  </Button>
+                )}
+              </div>
+
+              {/* Progress bar showing what was completed */}
+              {progress > 0 && (
+                <Progress 
+                  value={percent} 
+                  indicatorColor="#EF4444"
+                  size="sm" 
+                  className="h-2" 
+                />
+              )}
+
+              {/* Status text */}
+              <p className="text-xs text-red-700/80 mt-2 font-medium">
+                {failedCount > 0 
+                  ? t("vocabulary.import.failedPartial", { completed: progress, failed: failedCount, total })
+                  : t("vocabulary.import.failedAll", { total })
+                }
+              </p>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-xs">
+            <div className="space-y-2 p-1">
+              <p className="font-semibold text-sm text-red-700">
+                {t("vocabulary.import.tooltipFailed")}
+              </p>
+              {error && (
+                <div className="bg-red-100 border border-red-200 rounded p-2 text-xs text-red-800">
+                  {error}
+                </div>
+              )}
+              <div className="space-y-1 text-xs text-text-secondary">
+                <p>{t("vocabulary.import.tooltipTotal", { total })}</p>
+                <p className="text-emerald-700">{t("vocabulary.import.tooltipSucceeded", { succeeded: progress })}</p>
+                <p className="text-red-700">{t("vocabulary.import.tooltipFailedCount", { failed: failedCount })}</p>
+              </div>
+              <p className="text-xs text-text-tertiary italic pt-1 border-t border-neutral-border">
+                {t("vocabulary.import.tooltipRetryHint")}
+              </p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+
+  return null
+}
+
+// ============================================================================
+// Book Card Component
+// ============================================================================
+
+interface VocabularyBookCardProps {
+  book: VocabularyBookWithProgress
+  onClick: () => void
+  index: number
+  isAuthenticated: boolean
+  onOpenSettings?: (bookId: string, e: React.MouseEvent) => void
+  userId?: string | null
+}
+
 /**
  * Single vocabulary book card component
  */
@@ -65,22 +309,51 @@ function VocabularyBookCard({
   onClick,
   index,
   isAuthenticated,
-  onOpenSettings
-}: {
-  book: VocabularyBookWithProgress
-  onClick: () => void
-  index: number
-  isAuthenticated: boolean
-  onOpenSettings?: (bookId: string, e: React.MouseEvent) => void
-}) {
+  onOpenSettings,
+  userId
+}: VocabularyBookCardProps) {
   const { t } = useTranslation()
 
+  // Calculate mastery progress
   const masteredCount = book.progress?.mastered_count ?? 0
   const progressPercent =
     book.word_count > 0
       ? Math.round((masteredCount / book.word_count) * 100)
       : 0
   const lastStudied = formatLastStudied(book.progress?.last_studied_at)
+  
+  // Import status - use hook for real-time polling if pending, importing, or failed
+  const importStatus = book.import_status as ImportStatus | null
+  const needsPolling = importStatus === "pending" || importStatus === "importing" || importStatus === "failed"
+  
+  const {
+    progress: realTimeProgress,
+    isImporting,
+    isFailed,
+    isPending,
+    retryFailed,
+    isRetrying
+  } = useVocabularyImport(
+    needsPolling ? book.id : null,
+    userId ?? null
+  )
+
+  // Use real-time progress if available, otherwise fall back to book data
+  const importProgress = realTimeProgress?.current ?? book.import_progress ?? 0
+  const importTotal = realTimeProgress?.total ?? book.import_total ?? 0
+  const currentImportStatus = realTimeProgress?.status ?? importStatus
+  const importError = realTimeProgress?.error ?? book.import_error ?? null
+  
+  // Determine current state (pending is treated like importing - will transition soon)
+  const isCurrentlyPending = isPending || currentImportStatus === "pending"
+  const isCurrentlyImporting = isImporting || currentImportStatus === "importing" || isCurrentlyPending
+  const isCurrentlyFailed = isFailed || currentImportStatus === "failed"
+  const isBlocked = isCurrentlyImporting || isCurrentlyFailed
+
+  const handleCardClick = () => {
+    if (isBlocked) return
+    onClick()
+  }
 
   return (
     <motion.div
@@ -90,9 +363,22 @@ function VocabularyBookCard({
       custom={index}
     >
       <Card
-        className="group cursor-pointer hover:shadow-lg transition-all duration-300 overflow-hidden"
-        onClick={onClick}
+        className={cn(
+          "group transition-all duration-300 overflow-hidden relative",
+          isCurrentlyImporting 
+            ? "cursor-not-allowed ring-2 ring-ai/30 shadow-glow-ai/10" 
+            : isCurrentlyFailed
+            ? "cursor-not-allowed ring-2 ring-red-300/50"
+            : "cursor-pointer hover:shadow-lg hover:scale-[1.02]"
+        )}
+        onClick={handleCardClick}
       >
+        {/* Overlay to prevent clicks when importing (not when failed - need to allow retry) */}
+        {isCurrentlyImporting && (
+          <div className="absolute inset-0 z-10 cursor-not-allowed" />
+        )}
+
+        {/* Book Cover */}
         <div className={cn("h-24 relative", book.cover_color)}>
           <div className="absolute inset-0 bg-black/10" />
           <div className="absolute inset-0 flex items-center justify-center px-3">
@@ -100,12 +386,22 @@ function VocabularyBookCard({
               {book.cover_text || book.name}
             </span>
           </div>
+          {/* Decorative circles */}
           <div className="absolute inset-0 opacity-20">
             <div className="absolute top-2 right-2 w-16 h-16 border border-white/30 rounded-full" />
             <div className="absolute bottom-2 left-2 w-8 h-8 border border-white/30 rounded-full" />
           </div>
+
+          {/* Import indicator badge on cover (only show when importing, not failed) */}
+          {isCurrentlyImporting && (
+            <div className="absolute top-2 left-2 bg-ai/90 backdrop-blur-sm text-white px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {t("vocabulary.import.badge")}
+            </div>
+          )}
+
           {/* Settings Button */}
-          {isAuthenticated && onOpenSettings && (
+          {isAuthenticated && onOpenSettings && !isBlocked && (
             <button
               onClick={(e) => onOpenSettings(book.id, e)}
               className="absolute top-2 right-2 p-1.5 rounded-md bg-white/20 hover:bg-white/30 backdrop-blur-sm transition-colors opacity-0 group-hover:opacity-100"
@@ -119,10 +415,15 @@ function VocabularyBookCard({
         <CardContent className="pt-4">
           {/* Book Title */}
           <div className="flex items-start justify-between mb-2">
-            <h3 className="font-semibold text-text-primary line-clamp-1 group-hover:text-primary transition-colors">
+            <h3 className={cn(
+              "font-semibold text-text-primary line-clamp-1 transition-colors",
+              !isBlocked && "group-hover:text-primary"
+            )}>
               {book.name}
             </h3>
-            <ChevronRight className="h-4 w-4 text-text-tertiary group-hover:text-primary group-hover:translate-x-1 transition-all flex-shrink-0 ml-2" />
+            {!isBlocked && (
+              <ChevronRight className="h-4 w-4 text-text-tertiary group-hover:text-primary group-hover:translate-x-1 transition-all flex-shrink-0 ml-2" />
+            )}
           </div>
 
           {/* Description */}
@@ -130,45 +431,70 @@ function VocabularyBookCard({
             {book.description || t("vocabulary.noDescription")}
           </p>
 
-          {/* Stats */}
-          <div className="space-y-2">
-            {/* Progress bar */}
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-text-secondary">
-                {t("vocabulary.wordsCount", { count: book.word_count })}
-              </span>
-              <span className="text-primary font-medium">
-                {t("vocabulary.progress", { percent: progressPercent })}
-              </span>
-            </div>
-            <Progress value={progressPercent} animated className="h-1.5" />
+          {/* Import Status Display */}
+          {(isCurrentlyImporting || isCurrentlyFailed) && currentImportStatus && (
+            <ImportStatusDisplay
+              status={currentImportStatus}
+              progress={importProgress}
+              total={importTotal}
+              error={importError}
+              isRetrying={isRetrying}
+              onRetry={retryFailed}
+            />
+          )}
 
-            {/* Last studied */}
-            <div className="flex items-center gap-1.5 text-xs text-text-tertiary pt-1">
-              <Clock className="h-3 w-3" />
-              <span>
-                {lastStudied
-                  ? t("vocabulary.lastStudied", { time: lastStudied })
-                  : t("vocabulary.never")}
-              </span>
+          {/* Normal Stats (only show when not blocked) */}
+          {!isBlocked && (
+            <div className="space-y-2">
+              {/* Progress bar */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-text-secondary">
+                  {t("vocabulary.wordsCount", { count: book.word_count })}
+                </span>
+                <span className="text-primary font-medium">
+                  {t("vocabulary.progress", { percent: progressPercent })}
+                </span>
+              </div>
+              <Progress value={progressPercent} animated className="h-1.5" />
+
+              {/* Last studied */}
+              <div className="flex items-center gap-1.5 text-xs text-text-tertiary pt-1">
+                <Clock className="h-3 w-3" />
+                <span>
+                  {lastStudied
+                    ? t("vocabulary.lastStudied", { time: lastStudied })
+                    : t("vocabulary.never")}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Blocked state message */}
+          {isBlocked && (
+            <div className="text-xs text-text-tertiary flex items-center gap-1.5 pt-2">
+              <Clock className="h-3 w-3" />
+              <span>{t("vocabulary.import.blockedHint")}</span>
+            </div>
+          )}
         </CardContent>
       </Card>
     </motion.div>
   )
 }
 
-/**
- * Empty state component
- */
-function EmptyState({
-  type,
-  onCreateBook
-}: {
+// ============================================================================
+// Empty State Component
+// ============================================================================
+
+interface EmptyStateProps {
   type: "user" | "system" | "search"
   onCreateBook?: () => void
-}) {
+}
+
+/**
+ * Empty state component for different scenarios
+ */
+function EmptyState({ type, onCreateBook }: EmptyStateProps) {
   const { t } = useTranslation()
 
   if (type === "search") {
@@ -217,8 +543,12 @@ function EmptyState({
   )
 }
 
+// ============================================================================
+// Loading Skeleton Component
+// ============================================================================
+
 /**
- * Loading skeleton component
+ * Loading skeleton for book cards
  */
 function BookCardSkeleton() {
   return (
@@ -234,6 +564,10 @@ function BookCardSkeleton() {
     </Card>
   )
 }
+
+// ============================================================================
+// Main Page Component
+// ============================================================================
 
 /**
  * Main VocabularyBooks page component
@@ -292,7 +626,7 @@ export function VocabularyBooks() {
   }
 
   const handleOpenSettings = (bookId: string, e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent card click
+    e.stopPropagation()
     setSelectedBookId(bookId)
     setSettingsDialogOpen(true)
   }
@@ -446,6 +780,7 @@ export function VocabularyBooks() {
                         index={index}
                         isAuthenticated={isAuthenticated}
                         onOpenSettings={handleOpenSettings}
+                        userId={user?.id}
                       />
                     ))}
                   </motion.div>
@@ -481,6 +816,7 @@ export function VocabularyBooks() {
                       index={index}
                       isAuthenticated={isAuthenticated}
                       onOpenSettings={handleOpenSettings}
+                      userId={user?.id}
                     />
                   ))}
                 </motion.div>

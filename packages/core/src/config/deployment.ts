@@ -5,6 +5,8 @@
 
 /// <reference types="vite/client" />
 
+import type { LLMProvider } from "../types/user-settings"
+
 /**
  * Deployment mode types
  * - saas: Cloud-hosted service with managed LLM API and subscription billing
@@ -12,10 +14,8 @@
  */
 export type DeploymentMode = "saas" | "self-hosted"
 
-/**
- * LLM Provider types supported by the application
- */
-export type LLMProvider = "openai" | "anthropic" | "azure-openai" | "custom"
+// Re-export LLMProvider for convenience
+export type { LLMProvider }
 
 /**
  * LLM Configuration interface

@@ -239,7 +239,10 @@ export async function createBook(
     book_type: input.book_type || "custom",
     is_system_book: false,
     user_id: userId,
-    word_count: input.words.length
+    word_count: input.words.length,
+    import_status: "pending" as const,
+    import_progress: 0,
+    import_total: input.words.length
   }
 
   const { data: book, error: bookError } = await supabase

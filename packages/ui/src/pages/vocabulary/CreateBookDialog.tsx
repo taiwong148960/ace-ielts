@@ -18,7 +18,8 @@ import {
   cn,
   useTranslation,
   useCreateBook,
-  BOOK_COVER_COLORS
+  BOOK_COVER_COLORS,
+  startImport
 } from "@ace-ielts/core"
 
 import {
@@ -133,14 +134,24 @@ export function CreateBookDialog({
   const [error, setError] = useState<string | null>(null)
 
   // Use TanStack Query mutation hook
-  const { createBook, isCreating } = useCreateBook({
+  const { createBook, isCreating, reset: resetMutation } = useCreateBook({
     userId,
-    onSuccess: () => {
+    onSuccess: async (book) => {
       // Reset form
       resetForm()
+      // Reset mutation state to ensure button is enabled for next creation
+      resetMutation()
       // Close dialog and notify parent
       onOpenChange(false)
       onSuccess?.()
+      
+      // Start import task asynchronously (don't await to avoid blocking UI)
+      if (book.id && userId) {
+        startImport(book.id, userId).catch((error) => {
+          console.error("Failed to start import task:", error)
+          // Import will be retryable from the book list page
+        })
+      }
     },
     onError: (err) => {
       console.error("Error creating book:", err)
@@ -243,6 +254,8 @@ export function CreateBookDialog({
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
       resetForm()
+      // Reset mutation state when closing dialog
+      resetMutation()
     } else {
       setCoverColor(
         BOOK_COVER_COLORS[Math.floor(Math.random() * BOOK_COVER_COLORS.length)]

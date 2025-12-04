@@ -11,4 +11,5 @@ export {
 } from "./vocabulary"
 export { Login } from "./Login"
 export { AuthCallback } from "./AuthCallback"
+export { Settings } from "./Settings"
 

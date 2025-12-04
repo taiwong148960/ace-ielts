@@ -98,7 +98,9 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
         ref={ref}
         className={cn(cardVariants({ variant, padding }), className)}
         {...props}
-      />
+      >
+        {children}
+      </div>
     )
   }
 )

@@ -21,3 +21,5 @@ export { useBookDetail, useInvalidateBookDetail, formatWordForDisplay } from "./
 export type { UseBookDetailReturn, BookDetailData } from "./useBookDetail"
 export { useDashboardData, useTakeawayStats } from "./useDashboardData"
 export { useCreateBook } from "./useCreateBook"
+export { useVocabularyImport } from "./useVocabularyImport"
+export { useUserSettings } from "./useUserSettings"

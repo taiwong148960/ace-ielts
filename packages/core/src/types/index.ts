@@ -38,7 +38,10 @@ export type {
   BookSettings,
   UpdateBookSettingsInput,
   StudyOrder,
-  LearningMode
+  LearningMode,
+  ImportStatus,
+  ImportProgress,
+  WordDetailData
 } from "./vocabulary"
 export {
   BOOK_COVER_COLORS,
@@ -158,4 +161,11 @@ export interface DashboardData {
   mockTestStatus: MockTestStatus
   blogArticles: BlogArticle[]
 }
+
+// User Settings types
+export type {
+  LLMProvider,
+  UserSettings,
+  UpdateUserSettingsInput
+} from "./user-settings"
 

@@ -18,7 +18,8 @@ import {
   Sparkles,
   Target,
   AlertCircle,
-  Settings
+  Settings,
+  Upload,
 } from "lucide-react"
 import {
   LineChart,
@@ -37,7 +38,9 @@ import {
   useBookDetail,
   formatWordForDisplay,
   useAuth,
-  type BookDetailStats
+  useVocabularyImport,
+  type BookDetailStats,
+  type ImportStatus
 } from "@ace-ielts/core"
 
 import { MainLayout } from "../../layout"
@@ -47,6 +50,7 @@ import {
   CardHeader,
   CardTitle,
   Button,
+  Progress,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
@@ -371,12 +375,47 @@ export function VocabularyBookDetail() {
     initializeProgress
   } = useBookDetail(bookId, user?.id ?? null)
 
-  // Initialize progress when user starts viewing the book
+  // Check import status - use hook for real-time polling if importing or failed
+  const importStatus = book?.import_status as ImportStatus | null
+  const needsPolling = importStatus === "importing" || importStatus === "failed"
+  
+  const {
+    progress: realTimeProgress,
+    isImporting,
+    isFailed
+  } = useVocabularyImport(
+    needsPolling ? bookId : null,
+    user?.id ?? null
+  )
+
+  // Use real-time progress if available, otherwise fall back to book data
+  const currentImportStatus = realTimeProgress?.status ?? importStatus
+  const isCurrentlyImporting = isImporting || currentImportStatus === "importing"
+  const isCurrentlyFailed = isFailed || currentImportStatus === "failed"
+  const importProgress = realTimeProgress?.current ?? book?.import_progress ?? 0
+  const importTotal = realTimeProgress?.total ?? book?.import_total ?? 0
+  const importError = realTimeProgress?.error ?? book?.import_error ?? null
+
+  // Block access if importing or failed
+  const isBlocked = isCurrentlyImporting || isCurrentlyFailed
+
+  // Redirect to vocabulary list if blocked (when book data is loaded)
   useEffect(() => {
-    if (book && user && !isLoading) {
+    if (!isLoading && book && isBlocked) {
+      // Small delay to show the blocking message
+      const timer = setTimeout(() => {
+        navigation.navigate("/vocabulary")
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [isLoading, book, isBlocked, navigation])
+
+  // Initialize progress when user starts viewing the book (only if not blocked)
+  useEffect(() => {
+    if (book && user && !isLoading && !isBlocked) {
       initializeProgress()
     }
-  }, [book, user, isLoading, initializeProgress])
+  }, [book, user, isLoading, initializeProgress, isBlocked])
 
   // Calculate percentages
   const masteredPercent = useMemo(() => {
@@ -474,6 +513,69 @@ export function VocabularyBookDetail() {
           message={error || t("vocabulary.errors.fetchFailed")}
           onRetry={refetch}
         />
+      </MainLayout>
+    )
+  }
+
+  // Block access if importing or failed
+  if (isBlocked) {
+    const importPercent = importTotal > 0 ? Math.round((importProgress / importTotal) * 100) : 0
+    return (
+      <MainLayout activeNav="vocabulary" onNavigate={handleNavigate}>
+        <motion.div
+          className="max-w-2xl mx-auto flex flex-col items-center justify-center py-20 gap-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          {isCurrentlyImporting ? (
+            <>
+              <div className="relative">
+                <Upload className="h-16 w-16 text-ai animate-spin" />
+              </div>
+              <div className="text-center space-y-4">
+                <h2 className="text-2xl font-bold text-text-primary">
+                  {t("vocabulary.importing")}
+                </h2>
+                <p className="text-text-secondary">
+                  {t("vocabulary.errors.importInProgress")}
+                </p>
+                <div className="w-full max-w-md space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text-secondary">
+                      {t("vocabulary.importProgress", { current: importProgress, total: importTotal })}
+                    </span>
+                    <span className="text-ai font-semibold">{importPercent}%</span>
+                  </div>
+                  <Progress value={importPercent} variant="ai" animated className="h-2" />
+                </div>
+                <p className="text-sm text-text-tertiary mt-4">
+                  {t("vocabulary.importBlocked")}
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <AlertCircle className="h-16 w-16 text-red-500" />
+              <div className="text-center space-y-4">
+                <h2 className="text-2xl font-bold text-text-primary">
+                  {t("vocabulary.importFailed")}
+                </h2>
+                {importError && (
+                  <p className="text-red-700 bg-red-50 border border-red-200 rounded-md p-3 text-sm">
+                    {t("vocabulary.importError", { error: importError })}
+                  </p>
+                )}
+                <p className="text-text-secondary">
+                  {t("vocabulary.errors.importInProgress")}
+                </p>
+                <Button onClick={handleBack} variant="outline">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  {t("vocabulary.pageTitle")}
+                </Button>
+              </div>
+            </>
+          )}
+        </motion.div>
       </MainLayout>
     )
   }

@@ -119,8 +119,48 @@
     "loading": "Loading vocabulary books...",
     "refresh": "Refresh",
     "retry": "Retry",
+    "importing": "Importing word data...",
+    "importProgress": "{{current}} / {{total}} words",
+    "importFailed": "Import Failed",
+    "importFailedMessage": "{{current}} / {{total}} words imported ({{failed}} failed)",
+    "importFailedAll": "All {{total}} words failed to import",
+    "importError": "Error: {{error}}",
+    "retryImport": "Retry",
+    "retrying": "Retrying...",
+    "importTooltip": {
+      "importing": "Importing: {{current}} / {{total}} words",
+      "failed": "Import Failed: {{error}}",
+      "failedDetails": "{{failed}} out of {{total}} words failed to import"
+    },
+    "importBlocked": "This book is currently being imported. Please wait for the import to complete.",
+    "import": {
+      "pending": "Preparing...",
+      "pendingText": "Getting ready to enrich word data",
+      "importing": "Importing...",
+      "progressText": "{{current}} / {{total}} words processed",
+      "failed": "Import Failed",
+      "failedPartial": "{{completed}} succeeded, {{failed}} failed ({{total}} total)",
+      "failedAll": "All {{total}} words failed to import",
+      "retry": "Retry",
+      "retrying": "Retrying...",
+      "badge": "Importing",
+      "badgeFailed": "Failed",
+      "blockedHint": "Please wait for import to complete",
+      "tooltipPending": "Preparing Import",
+      "tooltipPendingDesc": "The system is preparing to enrich your vocabulary with definitions, examples, and more.",
+      "tooltipImporting": "Import in Progress",
+      "tooltipTotal": "Total words: {{total}}",
+      "tooltipCompleted": "Completed: {{completed}}",
+      "tooltipRemaining": "Remaining: {{remaining}}",
+      "tooltipWait": "Please wait for the import to finish before accessing this book.",
+      "tooltipFailed": "Import Failed",
+      "tooltipSucceeded": "Succeeded: {{succeeded}}",
+      "tooltipFailedCount": "Failed: {{failed}}",
+      "tooltipRetryHint": "Click the Retry button to attempt importing the failed words again."
+    },
     "errors": {
-      "fetchFailed": "Failed to load vocabulary books. Please try again."
+      "fetchFailed": "Failed to load vocabulary books. Please try again.",
+      "importInProgress": "This vocabulary book is currently being imported. Please wait for the import to complete before accessing it."
     },
     "createBook": {
       "title": "Create New Vocabulary Book",
@@ -323,5 +363,26 @@
     },
     "loading": "Loading dashboard...",
     "error": "Oops! Something went wrong"
+  },
+  "settings": {
+    "title": "Settings",
+    "description": "Manage your account settings and preferences",
+    "notAvailableInSaaS": "Settings are not available in SaaS mode. Please use self-hosted mode to configure API keys.",
+    "save": "Save",
+    "saving": "Saving...",
+    "llmApiKey": {
+      "title": "LLM API Key",
+      "description": "Configure your LLM API key for vocabulary enrichment (self-hosted mode only)",
+      "label": "API Key",
+      "placeholder": "Enter your Gemini API key",
+      "hint": "Your API key is encrypted and stored securely. It will be used to enrich vocabulary words with definitions, examples, and more.",
+      "configured": "API key is configured",
+      "saved": "API key saved successfully",
+      "show": "Show",
+      "hide": "Hide"
+    },
+    "errors": {
+      "saveFailed": "Failed to save settings. Please try again."
+    }
   }
 }
