@@ -1,8 +1,10 @@
-/* Import distinctive fonts from Google Fonts */
-/* Plus Jakarta Sans - Modern, geometric sans-serif with personality */
-/* DM Serif Display - Elegant serif for headings contrast */
-/* Outfit - Modern geometric for brand identity */
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
+/* ===========================================
+   AceIELTS - AI-Enhanced Design System (Sage Theme)
+   Light mode with AI accent effects
+   =========================================== */
+
+/* Import modern fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -10,99 +12,323 @@
 
 @layer base {
   :root {
-    /* CSS Variables for theming */
-    --color-primary: 14 117 105;
-    --color-primary-hover: 11 92 82;
-    --color-primary-light: 224 242 241;
+    /* Primary Colors */
+    --color-primary: 13 148 136;
+    --color-primary-hover: 15 118 110;
+    --color-primary-light: 204 251 241;
     
-    --color-accent-blue: 224 247 250;
-    --color-accent-purple: 243 229 245;
-    --color-accent-orange: 255 243 224;
+    /* AI Accent */
+    --color-ai: 139 92 246;
+    --color-ai-light: 167 139 250;
+    --color-ai-glow: rgba(139, 92, 246, 0.15);
     
-    --color-neutral-bg: 248 249 250;
-    --color-neutral-card: 255 255 255;
-    --color-neutral-border: 229 231 235;
+    /* Backgrounds */
+    --color-background: 249 250 251;
+    --color-card: 255 255 255;
+    --color-muted: 241 245 249;
     
-    --color-text-primary: 31 41 55;
+    /* Borders */
+    --color-border: 229 231 235;
+    --color-border-hover: 209 213 219;
+    
+    /* Text */
+    --color-text-primary: 17 24 39;
     --color-text-secondary: 107 114 128;
     --color-text-tertiary: 156 163 175;
     
+    /* Functional */
     --color-success: 16 185 129;
     --color-warning: 245 158 11;
     --color-error: 239 68 68;
+    --color-info: 59 130 246;
+    
+    /* IELTS Skills */
+    --color-skill-listening: 59 130 246;
+    --color-skill-reading: 16 185 129;
+    --color-skill-writing: 139 92 246;
+    --color-skill-speaking: 245 158 11;
   }
   
   * {
     @apply border-neutral-border;
   }
   
-  body {
-    @apply font-sans text-text-primary bg-neutral-background antialiased;
-  }
-  
-  /* Smooth scrolling */
   html {
     scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  body {
+    @apply font-sans text-text-primary bg-neutral-background;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  
+  /* Custom selection color */
+  ::selection {
+    @apply bg-primary-100 text-primary-900;
+  }
+  
+  /* Focus visible styles */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-neutral-background;
   }
 }
 
 @layer components {
-  /* Card component base styles with subtle gradient */
+  /* ===========================================
+     Card Styles - Glass morphism effect
+     =========================================== */
   .card {
     @apply bg-neutral-card rounded-md p-lg shadow-card;
-    background: linear-gradient(
-      135deg,
-      rgb(255, 255, 255) 0%,
-      rgb(252, 253, 254) 100%
-    );
+    @apply border border-neutral-border/50;
+    @apply transition-all duration-200;
   }
   
-  /* Button variants */
+  .card:hover {
+    @apply shadow-card-hover;
+  }
+  
+  /* Glass card variant */
+  .card-glass {
+    @apply bg-white/80 backdrop-blur-md rounded-md p-lg;
+    @apply border border-white/50;
+    @apply shadow-lg;
+  }
+  
+  /* AI feature card with glow */
+  .card-ai {
+    @apply bg-neutral-card rounded-md p-lg;
+    @apply border border-ai-200/50;
+    @apply shadow-card;
+    @apply relative overflow-hidden;
+  }
+  
+  .card-ai::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.03) 0%, rgba(13, 148, 136, 0.03) 100%);
+  }
+  
+  .card-ai:hover::before {
+    @apply opacity-100;
+  }
+  
+  .card-ai:hover {
+    @apply shadow-glow-ai border-ai-300/50;
+  }
+
+  /* ===========================================
+     Button Styles
+     =========================================== */
   .btn-primary {
-    @apply bg-primary text-white font-semibold px-5 py-2.5 rounded-sm 
-           hover:bg-primary-hover transition-all duration-200
-           hover:shadow-md active:scale-[0.98];
+    @apply bg-primary text-white font-semibold px-5 py-2.5 rounded-md;
+    @apply hover:bg-primary-hover transition-all duration-200;
+    @apply hover:shadow-glow-primary active:scale-[0.98];
   }
   
-  /* Progress bar styles */
+  .btn-ai {
+    @apply relative font-semibold px-5 py-2.5 rounded-md text-white;
+    @apply transition-all duration-200;
+    @apply hover:shadow-glow-ai active:scale-[0.98];
+    background: linear-gradient(135deg, #0D9488 0%, #8B5CF6 100%);
+  }
+  
+  .btn-ai:hover {
+    background: linear-gradient(135deg, #0F766E 0%, #7C3AED 100%);
+  }
+  
+  .btn-ghost {
+    @apply text-text-secondary hover:text-primary hover:bg-primary-50;
+    @apply px-4 py-2 rounded-md transition-all duration-200;
+  }
+
+  /* ===========================================
+     Progress Bar Styles
+     =========================================== */
   .progress-track {
-    @apply h-2 bg-neutral-border rounded overflow-hidden;
+    @apply h-2 bg-neutral-border/50 rounded-full overflow-hidden;
   }
   
   .progress-fill {
-    @apply h-full bg-primary rounded transition-all duration-500 ease-out;
+    @apply h-full rounded-full transition-all duration-500 ease-out-expo;
+    background: linear-gradient(90deg, #0D9488 0%, #14B8A6 100%);
   }
   
-  /* Sidebar navigation item with smooth transitions */
+  .progress-fill-ai {
+    background: linear-gradient(90deg, #0D9488 0%, #8B5CF6 100%);
+  }
+
+  /* ===========================================
+     Navigation Styles
+     =========================================== */
   .nav-item {
-    @apply flex items-center gap-3 px-4 py-3 rounded-sm text-text-secondary 
-           hover:bg-accent-blue hover:text-primary transition-all duration-200 cursor-pointer
-           relative overflow-hidden;
+    @apply flex items-center gap-3 px-4 py-3 rounded-md;
+    @apply text-text-secondary font-medium;
+    @apply hover:bg-primary-50 hover:text-primary;
+    @apply transition-all duration-200 cursor-pointer;
+    @apply relative overflow-hidden;
   }
   
   .nav-item::before {
     content: '';
-    @apply absolute left-0 top-0 h-full w-1 bg-primary scale-y-0 transition-transform duration-200;
+    @apply absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full;
+    @apply bg-primary scale-y-0 transition-transform duration-200;
   }
   
   .nav-item-active {
-    @apply bg-accent-blue text-primary font-medium;
+    @apply bg-primary-50 text-primary;
   }
   
   .nav-item-active::before {
     @apply scale-y-100;
   }
+
+  /* ===========================================
+     AI Typing Indicator
+     =========================================== */
+  .ai-typing {
+    @apply flex items-center gap-1.5 px-4 py-3;
+  }
   
-  /* Glassmorphism effect for special cards */
-  .glass {
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+  .ai-typing-dot {
+    @apply w-2 h-2 rounded-full bg-ai-400;
+  }
+  
+  .ai-typing-dot:nth-child(1) { @apply animate-typing-dot-1; }
+  .ai-typing-dot:nth-child(2) { @apply animate-typing-dot-2; }
+  .ai-typing-dot:nth-child(3) { @apply animate-typing-dot-3; }
+
+  /* ===========================================
+     AI Message Bubble
+     =========================================== */
+  .ai-bubble {
+    @apply relative p-4 rounded-2xl rounded-tl-md;
+    @apply bg-gradient-to-br from-ai-50 to-primary-50;
+    @apply border border-ai-100;
+  }
+  
+  .ai-bubble::before {
+    content: '';
+    @apply absolute -left-px -top-px -right-px -bottom-px rounded-2xl rounded-tl-md;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(13, 148, 136, 0.2) 100%);
+    z-index: -1;
+    @apply opacity-0 transition-opacity duration-300;
+  }
+  
+  .ai-bubble:hover::before {
+    @apply opacity-100;
+  }
+
+  /* ===========================================
+     Gradient Text
+     =========================================== */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #0D9488 0%, #8B5CF6 100%);
+  }
+  
+  .text-gradient-primary {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #0D9488 0%, #14B8A6 100%);
+  }
+  
+  .text-gradient-ai {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%);
+  }
+
+  /* ===========================================
+     Gradient Border
+     =========================================== */
+  .gradient-border {
+    @apply relative;
+  }
+  
+  .gradient-border::before {
+    content: '';
+    @apply absolute inset-0 rounded-[inherit] p-[1px];
+    background: linear-gradient(135deg, #0D9488 0%, #8B5CF6 100%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  /* ===========================================
+     Glow Effects
+     =========================================== */
+  .glow-primary {
+    @apply shadow-glow-primary;
+  }
+  
+  .glow-ai {
+    @apply shadow-glow-ai;
+  }
+  
+  .glow-on-hover {
+    @apply transition-shadow duration-300;
+  }
+  
+  .glow-on-hover:hover {
+    @apply shadow-glow-primary;
+  }
+
+  /* ===========================================
+     Input Styles
+     =========================================== */
+  .input {
+    @apply w-full px-4 py-2.5 rounded-md;
+    @apply bg-white border border-neutral-border;
+    @apply text-text-primary placeholder:text-text-tertiary;
+    @apply transition-all duration-200;
+    @apply focus:border-primary focus:ring-2 focus:ring-primary/10;
+  }
+  
+  .input-ai {
+    @apply w-full px-4 py-2.5 rounded-md;
+    @apply bg-white border border-neutral-border;
+    @apply text-text-primary placeholder:text-text-tertiary;
+    @apply transition-all duration-200;
+    @apply focus:border-ai focus:ring-2 focus:ring-ai/10;
+  }
+
+  /* ===========================================
+     Badge Styles
+     =========================================== */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full;
+    @apply text-xs font-medium;
+  }
+  
+  .badge-primary {
+    @apply bg-primary-100 text-primary-700;
+  }
+  
+  .badge-ai {
+    @apply bg-ai-100 text-ai-700;
+  }
+  
+  .badge-skill-listening {
+    @apply bg-blue-100 text-blue-700;
+  }
+  
+  .badge-skill-reading {
+    @apply bg-emerald-100 text-emerald-700;
+  }
+  
+  .badge-skill-writing {
+    @apply bg-purple-100 text-purple-700;
+  }
+  
+  .badge-skill-speaking {
+    @apply bg-amber-100 text-amber-700;
   }
 }
 
 @layer utilities {
-  /* Custom scrollbar styles */
+  /* ===========================================
+     Custom Scrollbar
+     =========================================== */
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: #D1D5DB transparent;
@@ -110,6 +336,7 @@
   
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
   
   .scrollbar-thin::-webkit-scrollbar-track {
@@ -125,38 +352,89 @@
     background-color: #9CA3AF;
   }
   
-  /* Text gradient utility */
-  .text-gradient {
-    @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, #0E7569 0%, #10B981 100%);
+  .scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
   
-  /* Animated underline for links */
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ===========================================
+     Animated Underline
+     =========================================== */
   .animated-underline {
     @apply relative;
   }
   
   .animated-underline::after {
     content: '';
-    @apply absolute bottom-0 left-0 w-0 h-0.5 bg-primary transition-all duration-300;
+    @apply absolute bottom-0 left-0 w-0 h-0.5 rounded-full;
+    background: linear-gradient(90deg, #0D9488 0%, #8B5CF6 100%);
+    @apply transition-all duration-300;
   }
   
   .animated-underline:hover::after {
     @apply w-full;
   }
-  
-  /* Subtle pulse animation for notifications */
-  @keyframes subtle-pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.7;
-    }
+
+  /* ===========================================
+     Background Patterns
+     =========================================== */
+  .bg-dots {
+    background-image: radial-gradient(circle, #E5E7EB 1px, transparent 1px);
+    background-size: 24px 24px;
   }
   
-  .animate-subtle-pulse {
-    animation: subtle-pulse 2s ease-in-out infinite;
+  .bg-grid {
+    background-image: 
+      linear-gradient(to right, #E5E7EB 1px, transparent 1px),
+      linear-gradient(to bottom, #E5E7EB 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  
+  .bg-mesh {
+    background-image: 
+      radial-gradient(at 40% 20%, rgba(13, 148, 136, 0.08) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, rgba(139, 92, 246, 0.08) 0px, transparent 50%),
+      radial-gradient(at 0% 50%, rgba(13, 148, 136, 0.05) 0px, transparent 50%);
+  }
+
+  /* ===========================================
+     Animation Utilities
+     =========================================== */
+  .animate-delay-100 { animation-delay: 100ms; }
+  .animate-delay-200 { animation-delay: 200ms; }
+  .animate-delay-300 { animation-delay: 300ms; }
+  .animate-delay-400 { animation-delay: 400ms; }
+  .animate-delay-500 { animation-delay: 500ms; }
+
+  /* ===========================================
+     Shimmer Effect
+     =========================================== */
+  .shimmer {
+    @apply relative overflow-hidden;
+  }
+  
+  .shimmer::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%);
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+
+  /* ===========================================
+     Glass Morphism
+     =========================================== */
+  .glass {
+    @apply bg-white/80 backdrop-blur-md;
+    @apply border border-white/50;
+  }
+  
+  .glass-strong {
+    @apply bg-white/90 backdrop-blur-lg;
+    @apply border border-white/60;
   }
 }
-

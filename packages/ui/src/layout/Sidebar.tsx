@@ -1,3 +1,8 @@
+/**
+ * Sidebar Navigation Component
+ * AI-Enhanced Design System - Sage Theme
+ */
+
 import React from "react"
 import { motion } from "framer-motion"
 import {
@@ -9,7 +14,8 @@ import {
   Mic,
   PenTool,
   Settings,
-  User
+  User,
+  Sparkles
 } from "lucide-react"
 import { cn, useTranslation } from "@ace-ielts/core"
 
@@ -21,6 +27,7 @@ interface NavItem {
   labelKey: string
   icon: React.ElementType
   href?: string
+  isAI?: boolean
 }
 
 /**
@@ -36,8 +43,8 @@ const dashboardNavItems: NavItem[] = [
 const skillsNavItems: NavItem[] = [
   { id: "listening", labelKey: "nav.listening", icon: Headphones },
   { id: "reading", labelKey: "nav.reading", icon: BookOpen },
-  { id: "writing", labelKey: "nav.writing", icon: PenTool },
-  { id: "speaking", labelKey: "nav.speaking", icon: Mic }
+  { id: "writing", labelKey: "nav.writing", icon: PenTool, isAI: true },
+  { id: "speaking", labelKey: "nav.speaking", icon: Mic, isAI: true }
 ]
 
 /**
@@ -63,8 +70,7 @@ interface SidebarProps {
 }
 
 /**
- * Sidebar navigation component with animations
- * Contains main navigation and bottom items (Profile, Settings)
+ * Sidebar navigation component with AI-enhanced styling
  */
 export function Sidebar({ activeItem = "dashboard", onNavigate }: SidebarProps) {
   const { t } = useTranslation()
@@ -82,7 +88,7 @@ export function Sidebar({ activeItem = "dashboard", onNavigate }: SidebarProps) 
         key={item.id}
         onClick={() => handleClick(item.id)}
         className={cn(
-          "nav-item w-full text-left",
+          "nav-item w-full text-left group",
           isActive && "nav-item-active"
         )}
         initial={{ opacity: 0, x: -20 }}
@@ -91,8 +97,21 @@ export function Sidebar({ activeItem = "dashboard", onNavigate }: SidebarProps) 
         whileHover={{ x: 4 }}
         whileTap={{ scale: 0.98 }}
       >
-        <Icon className="h-5 w-5 flex-shrink-0" />
-        <span className="text-sm">{t(item.labelKey)}</span>
+        <div className="relative">
+          <Icon className={cn(
+            "h-5 w-5 flex-shrink-0 transition-colors",
+            item.isAI && !isActive && "text-ai-400 group-hover:text-ai"
+          )} />
+          {item.isAI && (
+            <Sparkles className="absolute -top-1 -right-1 h-2.5 w-2.5 text-ai" />
+          )}
+        </div>
+        <span className="text-sm flex-1">{t(item.labelKey)}</span>
+        {item.isAI && (
+          <span className="text-[10px] font-medium text-ai bg-ai-50 px-1.5 py-0.5 rounded">
+            AI
+          </span>
+        )}
       </motion.button>
     )
   }
@@ -111,9 +130,14 @@ export function Sidebar({ activeItem = "dashboard", onNavigate }: SidebarProps) 
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3, delay: 0.2 }}
       >
-        <h1 className="text-h1 text-primary font-extrabold font-brand text-center tracking-tight">
-          {t("common.appName")}
-        </h1>
+        <div className="flex items-center gap-3 justify-center">
+          <div className="p-2 bg-gradient-to-br from-primary to-ai rounded-lg shadow-glow-sm">
+            <BookOpen className="h-5 w-5 text-white" />
+          </div>
+          <h1 className="text-h2 font-bold font-brand text-gradient tracking-tight">
+            {t("common.appName")}
+          </h1>
+        </div>
       </motion.div>
 
       {/* Main Navigation */}
@@ -126,7 +150,7 @@ export function Sidebar({ activeItem = "dashboard", onNavigate }: SidebarProps) 
         {/* Skills Section */}
         <div className="mt-lg">
           <motion.p 
-            className="text-body-small text-text-tertiary uppercase tracking-wider px-3 mb-2"
+            className="text-xs font-medium text-text-tertiary uppercase tracking-wider px-3 mb-2"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3, delay: 0.15 }}
@@ -141,7 +165,7 @@ export function Sidebar({ activeItem = "dashboard", onNavigate }: SidebarProps) 
         {/* Resources Section */}
         <div className="mt-lg">
           <motion.p 
-            className="text-body-small text-text-tertiary uppercase tracking-wider px-3 mb-2"
+            className="text-xs font-medium text-text-tertiary uppercase tracking-wider px-3 mb-2"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3, delay: 0.3 }}
@@ -163,4 +187,3 @@ export function Sidebar({ activeItem = "dashboard", onNavigate }: SidebarProps) 
 }
 
 export default Sidebar
-
