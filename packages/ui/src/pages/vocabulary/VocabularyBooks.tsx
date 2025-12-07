@@ -14,8 +14,6 @@ import {
   Sparkles,
   RefreshCw,
   Settings,
-  AlertCircle,
-  RotateCw,
   Loader2
 } from "lucide-react"
 import {
@@ -35,10 +33,6 @@ import {
   CardContent,
   Button,
   Progress,
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-  TooltipProvider,
   fadeInUp,
   staggerContainer,
   staggerItem
@@ -70,173 +64,39 @@ function formatLastStudied(date: string | null | undefined): string | null {
   return studied.toLocaleDateString()
 }
 
-// ============================================================================
-// Import Status Component
-// ============================================================================
-
 interface ImportStatusDisplayProps {
   status: ImportStatus
   progress: number
   total: number
-  error: string | null
-  isRetrying: boolean
-  onRetry: () => void
 }
 
-/**
- * Import status display component
- * Handles importing and failed states with detailed tooltip information
- */
 function ImportStatusDisplay({
   status,
   progress,
-  total,
-  error,
-  isRetrying,
-  onRetry
+  total
 }: ImportStatusDisplayProps) {
   const { t } = useTranslation()
   const percent = total > 0 ? Math.round((progress / total) * 100) : 0
-  const failedCount = total - progress
 
   if (status === "importing") {
     return (
-      <TooltipProvider delayDuration={100}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="mb-3 p-3 bg-gradient-to-r from-ai-50 to-primary-50 border border-ai-200/60 rounded-lg cursor-help">
-              {/* Header with spinning icon and percentage */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Loader2 className="h-4 w-4 text-ai animate-spin" />
-                    <div className="absolute inset-0 animate-ping opacity-30">
-                      <Loader2 className="h-4 w-4 text-ai" />
-                    </div>
-                  </div>
-                  <span className="text-sm font-semibold text-ai">
-                    {t("vocabulary.import.importing")}
-                  </span>
-                </div>
-                <span className="text-sm font-bold text-ai tabular-nums">
-                  {percent}%
-                </span>
-              </div>
-
-              {/* Progress bar */}
-              <Progress 
-                value={percent} 
-                variant="ai" 
-                size="sm" 
-                animated 
-                glow
-                className="h-2" 
-              />
-
-              {/* Progress text */}
-              <p className="text-xs text-ai/80 mt-2 font-medium">
-                {t("vocabulary.import.progressText", { current: progress, total })}
-              </p>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-xs">
-            <div className="space-y-2 p-1">
-              <p className="font-semibold text-sm">
-                {t("vocabulary.import.tooltipImporting")}
-              </p>
-              <div className="space-y-1 text-xs text-text-secondary">
-                <p>{t("vocabulary.import.tooltipTotal", { total })}</p>
-                <p>{t("vocabulary.import.tooltipCompleted", { completed: progress })}</p>
-                <p>{t("vocabulary.import.tooltipRemaining", { remaining: total - progress })}</p>
-              </div>
-              <p className="text-xs text-text-tertiary italic pt-1 border-t border-neutral-border">
-                {t("vocabulary.import.tooltipWait")}
-              </p>
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    )
-  }
-
-  if (status === "failed") {
-    return (
-      <TooltipProvider delayDuration={100}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="mb-3 p-3 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200/60 rounded-lg cursor-help">
-              {/* Header with error icon and retry button */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-red-600" />
-                  <span className="text-sm font-semibold text-red-700">
-                    {t("vocabulary.import.failed")}
-                  </span>
-                </div>
-                {isRetrying ? (
-                  <div className="flex items-center gap-1.5 text-red-600">
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    <span className="text-xs font-medium">
-                      {t("vocabulary.import.retrying")}
-                    </span>
-                  </div>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2.5 text-xs font-medium text-red-700 hover:text-red-800 hover:bg-red-100/80 gap-1.5"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onRetry()
-                    }}
-                  >
-                    <RotateCw className="h-3.5 w-3.5" />
-                    {t("vocabulary.import.retry")}
-                  </Button>
-                )}
-              </div>
-
-              {/* Progress bar showing what was completed */}
-              {progress > 0 && (
-                <Progress 
-                  value={percent} 
-                  indicatorColor="#EF4444"
-                  size="sm" 
-                  className="h-2" 
-                />
-              )}
-
-              {/* Status text */}
-              <p className="text-xs text-red-700/80 mt-2 font-medium">
-                {failedCount > 0 
-                  ? t("vocabulary.import.failedPartial", { completed: progress, failed: failedCount, total })
-                  : t("vocabulary.import.failedAll", { total })
-                }
-              </p>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-xs">
-            <div className="space-y-2 p-1">
-              <p className="font-semibold text-sm text-red-700">
-                {t("vocabulary.import.tooltipFailed")}
-              </p>
-              {error && (
-                <div className="bg-red-100 border border-red-200 rounded p-2 text-xs text-red-800">
-                  {error}
-                </div>
-              )}
-              <div className="space-y-1 text-xs text-text-secondary">
-                <p>{t("vocabulary.import.tooltipTotal", { total })}</p>
-                <p className="text-emerald-700">{t("vocabulary.import.tooltipSucceeded", { succeeded: progress })}</p>
-                <p className="text-red-700">{t("vocabulary.import.tooltipFailedCount", { failed: failedCount })}</p>
-              </div>
-              <p className="text-xs text-text-tertiary italic pt-1 border-t border-neutral-border">
-                {t("vocabulary.import.tooltipRetryHint")}
-              </p>
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <div className="mb-3 p-3 bg-primary-50 border border-primary-200 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 text-primary animate-spin" />
+            <span className="text-sm font-semibold text-primary">
+              {t("vocabulary.import.importing")}
+            </span>
+          </div>
+          <span className="text-sm font-bold text-primary tabular-nums">
+            {percent}%
+          </span>
+        </div>
+        <Progress value={percent} size="sm" className="h-2" />
+        <p className="text-xs text-text-secondary mt-2">
+          {t("vocabulary.import.progressText", { current: progress, total })}
+        </p>
+      </div>
     )
   }
 
@@ -265,7 +125,6 @@ function VocabularyBookCard({
   index,
   isAuthenticated,
   onOpenSettings,
-  userId
 }: VocabularyBookCardProps) {
   const { t } = useTranslation()
 
@@ -277,41 +136,17 @@ function VocabularyBookCard({
       : 0
   const lastStudied = formatLastStudied(book.progress?.last_studied_at)
   
-  // Import status - use hook for real-time polling if importing or failed
   const importStatus = book.import_status as ImportStatus | null
-  const needsPolling = importStatus === "importing" || importStatus === "failed"
+  const needsPolling = importStatus === "importing"
   
-  const {
-    progress: realTimeProgress,
-    isImporting,
-    isFailed,
-    retryFailed,
-    isRetrying
-  } = useVocabularyImport(
-    needsPolling ? book.id : null,
-    userId ?? null
+  const { progress: realTimeProgress, isImporting } = useVocabularyImport(
+    needsPolling ? book.id : null
   )
 
-  // Use real-time progress if available, otherwise fall back to book data
   const importProgress = realTimeProgress?.current ?? book.import_progress ?? 0
-  let importTotal = realTimeProgress?.total ?? book.import_total ?? 0
+  const importTotal = realTimeProgress?.total ?? book.import_total ?? 0
   const currentImportStatus = realTimeProgress?.status ?? importStatus
-  const importError = realTimeProgress?.error ?? book.import_error ?? null
-  
-  // Determine current state
   const isCurrentlyImporting = isImporting || currentImportStatus === "importing"
-  const isCurrentlyFailed = isFailed || currentImportStatus === "failed"
-  
-  // For failed status, use word_count as total if it's larger than import_total
-  // This ensures accurate failure count display when import_total doesn't match actual word count
-  if (isCurrentlyFailed && book.word_count && book.word_count > importTotal) {
-    importTotal = book.word_count
-  }
-
-  const handleCardClick = () => {
-    // Allow clicking even during import - detail page will show only completed words
-    onClick()
-  }
 
   return (
     <motion.div
@@ -325,11 +160,9 @@ function VocabularyBookCard({
           "group transition-all duration-300 overflow-hidden relative",
           isCurrentlyImporting 
             ? "ring-2 ring-ai/30 shadow-glow-ai/10 cursor-pointer hover:shadow-lg hover:scale-[1.02]" 
-            : isCurrentlyFailed
-            ? "ring-2 ring-red-300/50 cursor-pointer hover:shadow-lg hover:scale-[1.02]"
             : "cursor-pointer hover:shadow-lg hover:scale-[1.02]"
         )}
-        onClick={handleCardClick}
+        onClick={onClick}
       >
 
         {/* Book Cover */}
@@ -346,7 +179,6 @@ function VocabularyBookCard({
             <div className="absolute bottom-2 left-2 w-8 h-8 border border-white/30 rounded-full" />
           </div>
 
-          {/* Import indicator badge on cover (only show when importing, not failed) */}
           {isCurrentlyImporting && (
             <div className="absolute top-2 left-2 bg-ai/90 backdrop-blur-sm text-white px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1.5">
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -381,14 +213,11 @@ function VocabularyBookCard({
           </p>
 
           {/* Import Status Display */}
-          {(isCurrentlyImporting || isCurrentlyFailed) && currentImportStatus && (
+          {isCurrentlyImporting && currentImportStatus && (
             <ImportStatusDisplay
               status={currentImportStatus}
               progress={importProgress}
               total={importTotal}
-              error={importError}
-              isRetrying={isRetrying}
-              onRetry={retryFailed}
             />
           )}
 
@@ -574,11 +403,8 @@ export function VocabularyBooks() {
     // Settings saved, could refresh if needed
   }
 
-  const totalWordCount =
-    systemBooks.reduce((acc, book) => acc + book.word_count, 0) +
-    userBooks.reduce((acc, book) => acc + book.word_count, 0)
-
-  const totalBookCount = systemBooks.length + userBooks.length
+  const totalWordCount = userBooks.reduce((acc, book) => acc + book.word_count, 0)
+  const totalBookCount = userBooks.length
 
   return (
     <MainLayout activeNav="vocabulary" onNavigate={handleNavigate}>

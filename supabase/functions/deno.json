@@ -4,7 +4,8 @@
     "strict": true
   },
   "imports": {
-    "supabase": "https://esm.sh/@supabase/supabase-js@2"
+    "supabase": "https://esm.sh/@supabase/supabase-js@2",
+    "@supabase/functions/_shared/logger.ts": "./_shared/logger.ts"
   }
 }
 

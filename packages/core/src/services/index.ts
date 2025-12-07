@@ -1,7 +1,7 @@
 /**
  * Services barrel export
  */
-export { dashboardApi, configureApi } from "./api"
+export { dashboardApi } from "./api"
 export type { IDashboardApi } from "./api"
 
 // Supabase
@@ -24,26 +24,20 @@ export {
 
 // Vocabulary
 export {
-  vocabularyApi,
-  getSystemBooks,
-  getUserBooks,
   getUserBooksWithProgress,
   getSystemBooksWithProgress,
-  getBookById,
   createBook,
   updateBook,
   deleteBook,
   getBookWords,
   addWords,
   deleteWord,
-  getBookProgress,
   getBookSettings,
   updateBookSettings
 } from "./vocabulary"
-export type { IVocabularyApi } from "./vocabulary"
 
-// FSRS Spaced Repetition
-export { FSRSScheduler, fsrsScheduler, createInitialWordProgress, stateToMasteryLevel } from "./fsrs"
+// FSRS Spaced Repetition (utility functions only - algorithm is in Edge Functions)
+export { stateToMasteryLevel } from "./fsrs"
 
 // Vocabulary Detail
 export {
@@ -53,27 +47,14 @@ export {
   getDifficultWords,
   processWordReview,
   initializeBookProgress,
-  getWordSchedulePreview,
   formatNextReview
 } from "./vocabulary-detail"
 
 // Vocabulary Import
 export {
-  startImport,
-  getImportProgress,
-  retryFailedWords,
-  getFailedWordsErrors
+  getImportProgress
 } from "./vocabulary-import"
 
-// Gemini API
-export {
-  enrichWord,
-  enrichWordWithRetry,
-  generateAudio,
-  generateWordAudio,
-  generateExampleAudios,
-  type GeminiConfig
-} from "./gemini"
 
 // User Settings
 export {

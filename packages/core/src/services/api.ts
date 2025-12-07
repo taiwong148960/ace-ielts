@@ -24,26 +24,6 @@ import { createLogger } from "../utils/logger"
 // Create logger for this service
 const logger = createLogger("DashboardApiService")
 
-/**
- * Configuration for API behavior
- */
-interface ApiConfig {
-  baseUrl?: string
-}
-
-/**
- * Default configuration
- */
-const defaultConfig: ApiConfig = {}
-
-let config = { ...defaultConfig }
-
-/**
- * Configure API behavior
- */
-export function configureApi(newConfig: Partial<ApiConfig>) {
-  config = { ...config, ...newConfig }
-}
 
 /**
  * Dashboard API interface

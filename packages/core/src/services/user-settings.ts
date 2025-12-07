@@ -39,6 +39,7 @@ export async function getUserSettings(userId: string): Promise<UserSettings | nu
 
 /**
  * Get or create user settings
+ * Uses updateUserSettings which automatically creates if not exists
  */
 export async function getOrCreateUserSettings(userId: string): Promise<UserSettings> {
   const existing = await getUserSettings(userId)
@@ -46,36 +47,10 @@ export async function getOrCreateUserSettings(userId: string): Promise<UserSetti
     return existing
   }
 
-  // Create default settings
-  return await createUserSettings(userId)
-}
-
-/**
- * Create default user settings
- * Calls Edge Function: user-settings-create
- */
-async function createUserSettings(userId: string): Promise<UserSettings> {
-  if (!isSupabaseInitialized()) {
-    throw new Error("Supabase not initialized")
-  }
-
-  const supabase = getSupabase()
-  
-  logger.info("Creating user settings via Edge Function", { userId })
-
-  const { data, error } = await supabase.functions.invoke('user-settings-create', {})
-
-  if (error) {
-    logger.error("Failed to create user settings via Edge Function", { userId }, error)
-    throw new Error(error.message || "Failed to create user settings")
-  }
-
-  if (!data?.success) {
-    throw new Error(data?.error || "Failed to create user settings")
-  }
-  
-  logger.info("User settings created", { userId })
-  return data.data
+  // Create default settings using updateUserSettings (which supports create)
+  return await updateUserSettings(userId, {
+    llm_provider: "gemini"
+  })
 }
 
 /**

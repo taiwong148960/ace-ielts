@@ -6,6 +6,9 @@
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
 import { safeDecrypt } from "../_shared/crypto.ts"
+import { createLogger } from "@supabase/functions/_shared/logger.ts"
+
+const logger = createLogger("user-settings-get-api-key")
 
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void
@@ -50,7 +53,7 @@ Deno.serve(async (req) => {
     const decryptedKey = await safeDecrypt(settings.llm_api_key_encrypted)
 
     if (!decryptedKey) {
-      console.error("Failed to decrypt API key for user:", user.id)
+      logger.error("Failed to decrypt API key for user", { userId: user.id })
       return errorResponse("Failed to decrypt API key", 500)
     }
 
@@ -60,7 +63,7 @@ Deno.serve(async (req) => {
       provider: settings.llm_provider
     })
   } catch (error) {
-    console.error("Edge function error:", error)
+    logger.error("Edge function error", {}, error as Error)
     
     if (error instanceof Error) {
       if (error.message === "Unauthorized" || error.message === "Missing authorization header") {

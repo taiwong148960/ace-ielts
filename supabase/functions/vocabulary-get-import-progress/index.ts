@@ -4,6 +4,9 @@
  */
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
+import { createLogger } from "@supabase/functions/_shared/logger.ts"
+
+const logger = createLogger("vocabulary-get-import-progress")
 
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void
@@ -34,7 +37,7 @@ Deno.serve(async (req) => {
     // Get book with import status
     const { data: book, error: bookError } = await supabaseAdmin
       .from("vocabulary_books")
-      .select("import_status, import_progress, import_total, import_started_at, import_completed_at, import_error, word_count, is_system_book, user_id")
+      .select("import_status, import_progress, import_total, import_started_at, import_completed_at, word_count, is_system_book, user_id")
       .eq("id", input.bookId)
       .single()
 
@@ -49,23 +52,17 @@ Deno.serve(async (req) => {
 
     const status = book.import_status || null
     const progress = book.import_progress || 0
-    
-    // For failed status, use word_count as total if import_total seems incorrect
-    let total = book.import_total || 0
-    if (status === "failed" && book.word_count && book.word_count > total) {
-      total = book.word_count
-    }
+    const total = book.import_total || 0
 
     return successResponse({
       status,
       current: progress,
       total,
       startedAt: book.import_started_at || undefined,
-      completedAt: book.import_completed_at || undefined,
-      error: book.import_error || undefined
+      completedAt: book.import_completed_at || undefined
     })
   } catch (error) {
-    console.error("Edge function error:", error)
+    logger.error("Edge function error", {}, error as Error)
     
     if (error instanceof Error) {
       if (error.message === "Unauthorized" || error.message === "Missing authorization header") {

@@ -4,6 +4,9 @@
  */
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
+import { createLogger } from "@supabase/functions/_shared/logger.ts"
+
+const logger = createLogger("vocabulary-add-words")
 
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void
@@ -71,7 +74,7 @@ Deno.serve(async (req) => {
       .select()
 
     if (insertError) {
-      console.error("Failed to add words:", insertError)
+      logger.error("Failed to add words", { bookId: input.bookId, userId: user.id, wordCount: wordsToInsert.length }, new Error(insertError.message))
       return errorResponse("Failed to add words", 500)
     }
 
@@ -93,7 +96,7 @@ Deno.serve(async (req) => {
       wordCount: count
     })
   } catch (error) {
-    console.error("Edge function error:", error)
+    logger.error("Edge function error", {}, error as Error)
     
     if (error instanceof Error) {
       if (error.message === "Unauthorized" || error.message === "Missing authorization header") {

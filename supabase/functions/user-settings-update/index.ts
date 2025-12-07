@@ -5,6 +5,9 @@
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
 import { encrypt } from "../_shared/crypto.ts"
+import { createLogger } from "@supabase/functions/_shared/logger.ts"
+
+const logger = createLogger("user-settings-update")
 
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void
@@ -76,7 +79,7 @@ Deno.serve(async (req) => {
         .single()
 
       if (error) {
-        console.error("Failed to update user settings:", error)
+        logger.error("Failed to update user settings", { userId: user.id }, new Error(error.message))
         return errorResponse("Failed to update user settings", 500)
       }
       settings = data
@@ -93,7 +96,7 @@ Deno.serve(async (req) => {
         .single()
 
       if (error) {
-        console.error("Failed to create user settings:", error)
+        logger.error("Failed to create user settings", { userId: user.id }, new Error(error.message))
         return errorResponse("Failed to create user settings", 500)
       }
       settings = data
@@ -107,7 +110,7 @@ Deno.serve(async (req) => {
 
     return successResponse(safeSettings)
   } catch (error) {
-    console.error("Edge function error:", error)
+    logger.error("Edge function error", {}, error as Error)
     
     if (error instanceof Error) {
       if (error.message === "Unauthorized" || error.message === "Missing authorization header") {

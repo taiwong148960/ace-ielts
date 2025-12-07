@@ -4,7 +4,6 @@
  */
 
 import { getSupabase, isSupabaseInitialized } from "./supabase"
-import { fsrsScheduler } from "./fsrs"
 import type {
   VocabularyBook,
   UserWordProgress,
@@ -12,7 +11,6 @@ import type {
   BookDetailStats,
   WordWithProgress,
   TodayLearningSession,
-  FSRSRating,
 } from "../types/vocabulary"
 import { GRADE_TO_RATING, type SpacedRepetitionGrade } from "../types/vocabulary"
 import { createLogger } from "../utils/logger"
@@ -213,12 +211,11 @@ export async function initializeBookProgress(
 
 /**
  * Get schedule preview for a word
+ * 
+ * Note: This function has been removed as the FSRS algorithm is now handled
+ * entirely by Supabase Edge Functions. If schedule preview is needed in the UI,
+ * it should be implemented as an Edge Function endpoint.
  */
-export function getWordSchedulePreview(
-  progress: Pick<UserWordProgress, 'state' | 'difficulty' | 'stability' | 'learning_step' | 'is_learning_phase' | 'elapsed_days' | 'reps' | 'lapses'>
-): Record<FSRSRating, string> {
-  return fsrsScheduler.getSchedulePreview(progress)
-}
 
 /**
  * Format next review time for display

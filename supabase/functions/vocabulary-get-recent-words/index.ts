@@ -4,7 +4,7 @@
  */
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
-import { createLogger } from "../_shared/logger.ts"
+import { createLogger } from "@supabase/functions/_shared/logger.ts"
 import type { FSRSState } from "../_shared/types.ts"
 
 const logger = createLogger("vocabulary-get-recent-words")

@@ -52,8 +52,7 @@ export const queryKeys = {
   // Vocabulary Import
   vocabularyImport: {
     all: ["vocabularyImport"] as const,
-    progress: (bookId: string) => ["vocabularyImport", "progress", bookId] as const,
-    failedWords: (bookId: string) => ["vocabularyImport", "failedWords", bookId] as const
+    progress: (bookId: string) => ["vocabularyImport", "progress", bookId] as const
   },
   // Dashboard
   dashboard: {

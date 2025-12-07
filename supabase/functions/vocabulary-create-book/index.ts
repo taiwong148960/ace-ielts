@@ -4,7 +4,7 @@
  */
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
-import { createLogger } from "../_shared/logger.ts"
+import { createLogger } from "@supabase/functions/_shared/logger.ts"
 import { BOOK_COVER_COLORS, type CreateBookInput } from "../_shared/types.ts"
 
 // Create logger for this function
@@ -56,9 +56,10 @@ Deno.serve(async (req) => {
       is_system_book: false,
       user_id: user.id,
       word_count: cleanedWords.length,
-      import_status: null,
+      import_status: cleanedWords.length > 0 ? "importing" : "completed",
       import_progress: 0,
-      import_total: cleanedWords.length
+      import_total: cleanedWords.length,
+      import_started_at: cleanedWords.length > 0 ? new Date().toISOString() : null
     }
 
     const { data: book, error: bookError } = await supabaseAdmin
@@ -78,7 +79,8 @@ Deno.serve(async (req) => {
     if (cleanedWords.length > 0) {
       const wordsToInsert = cleanedWords.map(word => ({
         book_id: book.id,
-        word: word
+        word: word,
+        import_status: "pending"
       }))
 
       const { error: wordsError } = await supabaseAdmin

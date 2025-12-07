@@ -373,24 +373,16 @@ export function VocabularyBookDetail() {
     initializeProgress
   } = useBookDetail(bookId, user?.id ?? null)
 
-  // Check import status - use hook for real-time polling if importing or failed
   const importStatus = book?.import_status as ImportStatus | null
-  const needsPolling = importStatus === "importing" || importStatus === "failed"
+  const needsPolling = importStatus === "importing"
   
-  const {
-    progress: realTimeProgress,
-  } = useVocabularyImport(
-    needsPolling ? bookId : null,
-    user?.id ?? null
+  const { progress: realTimeProgress } = useVocabularyImport(
+    needsPolling ? bookId : null
   )
 
-  // Use real-time progress if available, otherwise fall back to book data
   const currentImportStatus = realTimeProgress?.status ?? importStatus
   const importProgress = realTimeProgress?.current ?? book?.import_progress ?? 0
   const importTotal = realTimeProgress?.total ?? book?.import_total ?? 0
-  const importError = realTimeProgress?.error ?? book?.import_error ?? null
-
-  // Initialize progress when user starts viewing the book
   useEffect(() => {
     if (book && user && !isLoading) {
       initializeProgress()
@@ -527,77 +519,35 @@ export function VocabularyBookDetail() {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold text-text-primary">{book.name}</h1>
               
-              {/* Import Status Indicator */}
-              {currentImportStatus && (
-                <div className="flex items-center gap-2">
-                  {currentImportStatus === "importing" && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-primary-50 rounded-md border border-primary-200">
-                      <div className="relative h-4 w-4">
-                        <motion.div
-                          className="absolute inset-0 border-2 border-primary border-t-transparent rounded-full"
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                        />
-                      </div>
-                      <span className="text-sm font-medium text-primary">
-                        {t("vocabulary.bookDetail.importStatus.importing")}
-                      </span>
-                      {importTotal > 0 && (
-                        <>
-                          <span className="text-xs text-text-secondary">·</span>
-                          <span className="text-xs text-text-secondary">
-                            {t("vocabulary.bookDetail.importStatus.importingProgress", {
-                              current: importProgress,
-                              total: importTotal
-                            })}
-                          </span>
-                          <div className="w-24 h-1.5 bg-primary-100 rounded-full overflow-hidden">
-                            <motion.div
-                              className="h-full bg-primary"
-                              initial={{ width: 0 }}
-                              animate={{
-                                width: `${importTotal > 0 ? Math.min(100, (importProgress / importTotal) * 100) : 0}%`
-                              }}
-                              transition={{ duration: 0.3 }}
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
+              {currentImportStatus === "importing" && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-primary-50 rounded-md border border-primary-200">
+                  <div className="relative h-4 w-4">
+                    <motion.div
+                      className="absolute inset-0 border-2 border-primary border-t-transparent rounded-full"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-primary">
+                    {t("vocabulary.bookDetail.importStatus.importing")}
+                  </span>
+                  {importTotal > 0 && (
+                    <span className="text-xs text-text-secondary">
+                      {t("vocabulary.bookDetail.importStatus.importingProgress", {
+                        current: importProgress,
+                        total: importTotal
+                      })}
+                    </span>
                   )}
-                  
-                  {currentImportStatus === "completed" && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-md border border-emerald-200">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      <span className="text-sm font-medium text-emerald-700">
-                        {t("vocabulary.bookDetail.importStatus.completed")}
-                      </span>
-                    </div>
-                  )}
-                  
-                  {currentImportStatus === "failed" && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 rounded-md border border-red-200 cursor-help">
-                            <AlertCircle className="h-4 w-4 text-red-600" />
-                            <span className="text-sm font-medium text-red-700">
-                              {t("vocabulary.bookDetail.importStatus.failed")}
-                            </span>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-xs">
-                          <p className="text-sm">
-                            {importError
-                              ? t("vocabulary.bookDetail.importStatus.failedWithError", {
-                                  error: importError
-                                })
-                              : t("vocabulary.bookDetail.importStatus.failed")}
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
+                </div>
+              )}
+              
+              {currentImportStatus === "completed" && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-md border border-emerald-200">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  <span className="text-sm font-medium text-emerald-700">
+                    {t("vocabulary.bookDetail.importStatus.completed")}
+                  </span>
                 </div>
               )}
               

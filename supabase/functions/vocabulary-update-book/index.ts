@@ -5,6 +5,9 @@
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
 import { type UpdateBookInput } from "../_shared/types.ts"
+import { createLogger } from "@supabase/functions/_shared/logger.ts"
+
+const logger = createLogger("vocabulary-update-book")
 
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void
@@ -66,13 +69,13 @@ Deno.serve(async (req) => {
       .single()
 
     if (error) {
-      console.error("Failed to update book:", error)
+      logger.error("Failed to update book", { bookId: input.bookId, userId: user.id }, new Error(error.message))
       return errorResponse("Failed to update vocabulary book", 500)
     }
 
     return successResponse(book)
   } catch (error) {
-    console.error("Edge function error:", error)
+    logger.error("Edge function error", {}, error as Error)
     
     if (error instanceof Error) {
       if (error.message === "Unauthorized" || error.message === "Missing authorization header") {

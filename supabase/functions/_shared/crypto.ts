@@ -3,6 +3,10 @@
  * Uses Web Crypto API (AES-GCM) for secure encryption
  */
 
+import { createLogger } from "./logger.ts"
+
+const logger = createLogger("crypto")
+
 // Declare Deno global for TypeScript
 declare const Deno: {
   env: {
@@ -17,7 +21,7 @@ declare const Deno: {
 function getEncryptionKey(): string {
   const key = Deno.env.get("ENCRYPTION_KEY")
   if (!key) {
-    console.warn("ENCRYPTION_KEY not set, using development fallback (NOT SECURE)")
+    logger.warn("ENCRYPTION_KEY not set, using development fallback (NOT SECURE)")
     // Development fallback - MUST be set in production
     return "ace-ielts-dev-encryption-key-32ch"
   }
@@ -132,12 +136,12 @@ export async function safeDecrypt(value: string | null | undefined): Promise<str
   try {
     // Try to decrypt with AES-GCM
     return await decrypt(value)
-  } catch {
+  } catch (error) {
     // Fallback: might be legacy base64 encoding
     try {
       return atob(value)
     } catch {
-      console.error("Failed to decrypt value")
+      logger.error("Failed to decrypt value", {}, error as Error)
       return null
     }
   }

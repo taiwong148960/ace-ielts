@@ -19,7 +19,6 @@ import {
   useTranslation,
   useCreateBook,
   BOOK_COVER_COLORS,
-  startImport,
   useInvalidateVocabularyBooks,
   createLogger
 } from "@ace-ielts/core"
@@ -149,24 +148,11 @@ export function CreateBookDialog({
       onOpenChange(false)
       onSuccess?.()
       
-      // Start import task asynchronously (don't await to avoid blocking UI)
+      // Book is automatically set to importing status when created
+      // Just invalidate queries to refresh the UI
       if (book.id && userId) {
-        // Start import and invalidate cache after import status is updated
-        // startImport updates the database immediately, so we invalidate after a short delay
-        startImport(book.id, userId)
-          .then(() => {
-            // Import completed successfully, invalidate to show final status
-            invalidateUser(userId)
-          })
-          .catch((error) => {
-            logger.error("Failed to start import task", { bookId: book.id, userId }, error instanceof Error ? error : new Error(String(error)))
-            // Even if import fails, invalidate to show failed status
-            invalidateUser(userId)
-            // Import will be retryable from the book list page
-          })
-        
-        // Invalidate immediately after a short delay to show importing status
-        // This ensures UI updates as soon as startImport updates the database
+        invalidateUser(userId)
+        // Also invalidate after a short delay to ensure backend has processed
         setTimeout(() => {
           invalidateUser(userId)
         }, 500)

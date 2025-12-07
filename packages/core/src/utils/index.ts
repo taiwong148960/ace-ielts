@@ -42,12 +42,3 @@ export function getGreeting(): string {
   return "evening"
 }
 
-/**
- * Simulate API delay for realistic loading states
- */
-export function withDelay<T>(data: T, delayMs: number = 500): Promise<T> {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(data), delayMs)
-  })
-}
-

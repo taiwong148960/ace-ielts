@@ -65,7 +65,6 @@ export interface VocabularyBook {
   import_total: number | null
   import_started_at: string | null
   import_completed_at: string | null
-  import_error: string | null
   created_at: string
   updated_at: string
 }
@@ -93,7 +92,6 @@ export interface VocabularyWord {
   word_audio_url: string | null // Audio URL for word pronunciation
   example_audio_urls: ExampleAudioData[] | null // Audio URLs for example sentences
   import_status: ImportStatus | null
-  import_error: string | null
   created_at: string
   updated_at: string
 }
@@ -396,7 +394,7 @@ export interface UpdateBookSettingsInput {
 /**
  * Import status for vocabulary book import workflow
  */
-export type ImportStatus = "importing" | "completed" | "failed"
+export type ImportStatus = "importing" | "completed"
 
 /**
  * Import progress tracking
@@ -407,7 +405,6 @@ export interface ImportProgress {
   total: number
   startedAt?: string
   completedAt?: string
-  error?: string
 }
 
 /**
