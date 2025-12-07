@@ -63,6 +63,14 @@ export interface VocabularyBook {
 }
 
 /**
+ * Example sentence audio data
+ */
+export interface ExampleAudioData {
+  sentence: string
+  audio_url: string
+}
+
+/**
  * Vocabulary word - individual word entry
  */
 export interface VocabularyWord {
@@ -74,6 +82,8 @@ export interface VocabularyWord {
   example_sentence: string | null
   notes: string | null
   word_details: WordDetailData | null // Rich word data from Gemini API
+  word_audio_url: string | null // Audio URL for word pronunciation
+  example_audio_urls: ExampleAudioData[] | null // Audio URLs for example sentences
   import_status: ImportStatus | null
   import_error: string | null
   created_at: string
@@ -378,13 +388,13 @@ export interface UpdateBookSettingsInput {
 /**
  * Import status for vocabulary book import workflow
  */
-export type ImportStatus = "pending" | "importing" | "completed" | "failed"
+export type ImportStatus = "importing" | "completed" | "failed"
 
 /**
  * Import progress tracking
  */
 export interface ImportProgress {
-  status: ImportStatus
+  status: ImportStatus | null
   current: number
   total: number
   startedAt?: string
@@ -419,4 +429,39 @@ export interface WordDetailData {
   easilyConfused?: string[]
   usageFrequency?: "common" | "uncommon" | "rare"
   tenses?: string[] // For verbs
+}
+
+/**
+ * TTS (Text-to-Speech) voice configuration
+ */
+export type TTSVoice = 
+  | "en-US-Neural2-A" // Female, friendly
+  | "en-US-Neural2-B" // Female, energetic
+  | "en-US-Neural2-C" // Male, calm
+  | "en-US-Neural2-D" // Male, warm
+  | "en-US-Neural2-E" // Female, cheerful
+  | "en-US-Neural2-F" // Female, professional
+  | "en-US-Neural2-G" // Female, soft
+  | "en-US-Neural2-H" // Male, deep
+  | "en-US-Neural2-I" // Male, friendly
+  | "en-US-Neural2-J" // Female, clear
+
+/**
+ * Audio generation configuration
+ */
+export interface AudioConfig {
+  voice: TTSVoice
+  speakingRate?: number // 0.25 to 4.0, default 1.0
+  pitch?: number // -20.0 to 20.0, default 0.0
+  volumeGainDb?: number // -96.0 to 16.0, default 0.0
+}
+
+/**
+ * Default audio configuration
+ */
+export const DEFAULT_AUDIO_CONFIG: AudioConfig = {
+  voice: "en-US-Neural2-F", // Professional female voice
+  speakingRate: 1.0,
+  pitch: 0.0,
+  volumeGainDb: 0.0
 }

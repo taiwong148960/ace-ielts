@@ -7,7 +7,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   getOrCreateUserSettings,
   updateUserSettings,
-  hasLLMApiKey
+  hasLLMApiKey,
+  getLLMApiKey
 } from "../services/user-settings"
 import type { UserSettings, UpdateUserSettingsInput } from "../types/user-settings"
 import { isSelfHostedMode } from "../config/deployment"
@@ -39,6 +40,16 @@ export function useUserSettings(userId: string | null) {
     enabled: !!userId && isSelfHostedMode()
   })
 
+  // Query for API key (decrypted, for display in settings)
+  const {
+    data: apiKey,
+    isLoading: isLoadingApiKey
+  } = useQuery<string | null>({
+    queryKey: ["user-settings-api-key", userId],
+    queryFn: () => (userId ? getLLMApiKey(userId) : Promise.resolve(null)),
+    enabled: !!userId && isSelfHostedMode()
+  })
+
   // Mutation for updating settings
   const updateMutation = useMutation({
     mutationFn: async (input: UpdateUserSettingsInput) => {
@@ -50,15 +61,17 @@ export function useUserSettings(userId: string | null) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user-settings", userId] })
       queryClient.invalidateQueries({ queryKey: ["user-settings-has-api-key", userId] })
+      queryClient.invalidateQueries({ queryKey: ["user-settings-api-key", userId] })
     }
   })
 
   return {
     // Settings data
     settings,
-    isLoading,
+    isLoading: isLoading || isLoadingApiKey,
     error,
     hasApiKey: hasApiKey ?? false,
+    apiKey: apiKey ?? null,
 
     // Actions
     updateSettings: (input: UpdateUserSettingsInput) => updateMutation.mutate(input),

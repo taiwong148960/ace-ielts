@@ -85,7 +85,7 @@ interface ImportStatusDisplayProps {
 
 /**
  * Import status display component
- * Handles pending, importing, and failed states with detailed tooltip information
+ * Handles importing and failed states with detailed tooltip information
  */
 function ImportStatusDisplay({
   status,
@@ -98,51 +98,6 @@ function ImportStatusDisplay({
   const { t } = useTranslation()
   const percent = total > 0 ? Math.round((progress / total) * 100) : 0
   const failedCount = total - progress
-
-  // Pending state - preparing to import
-  if (status === "pending") {
-    return (
-      <TooltipProvider delayDuration={100}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="mb-3 p-3 bg-gradient-to-r from-ai-50 to-primary-50 border border-ai-200/60 rounded-lg cursor-help">
-              {/* Header with spinning icon */}
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <Loader2 className="h-4 w-4 text-ai animate-spin" />
-                </div>
-                <span className="text-sm font-semibold text-ai">
-                  {t("vocabulary.import.pending")}
-                </span>
-              </div>
-
-              {/* Indeterminate progress bar */}
-              <div className="mt-2 h-2 bg-neutral-border/50 rounded-full overflow-hidden">
-                <div className="h-full w-1/3 bg-gradient-to-r from-primary via-ai to-ai-light rounded-full animate-pulse" 
-                  style={{ animation: 'shimmer 1.5s ease-in-out infinite' }}
-                />
-              </div>
-
-              {/* Status text */}
-              <p className="text-xs text-ai/80 mt-2 font-medium">
-                {t("vocabulary.import.pendingText")}
-              </p>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-xs">
-            <div className="space-y-2 p-1">
-              <p className="font-semibold text-sm">
-                {t("vocabulary.import.tooltipPending")}
-              </p>
-              <p className="text-xs text-text-secondary">
-                {t("vocabulary.import.tooltipPendingDesc")}
-              </p>
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    )
-  }
 
   if (status === "importing") {
     return (
@@ -322,15 +277,14 @@ function VocabularyBookCard({
       : 0
   const lastStudied = formatLastStudied(book.progress?.last_studied_at)
   
-  // Import status - use hook for real-time polling if pending, importing, or failed
+  // Import status - use hook for real-time polling if importing or failed
   const importStatus = book.import_status as ImportStatus | null
-  const needsPolling = importStatus === "pending" || importStatus === "importing" || importStatus === "failed"
+  const needsPolling = importStatus === "importing" || importStatus === "failed"
   
   const {
     progress: realTimeProgress,
     isImporting,
     isFailed,
-    isPending,
     retryFailed,
     isRetrying
   } = useVocabularyImport(
@@ -344,9 +298,8 @@ function VocabularyBookCard({
   const currentImportStatus = realTimeProgress?.status ?? importStatus
   const importError = realTimeProgress?.error ?? book.import_error ?? null
   
-  // Determine current state (pending is treated like importing - will transition soon)
-  const isCurrentlyPending = isPending || currentImportStatus === "pending"
-  const isCurrentlyImporting = isImporting || currentImportStatus === "importing" || isCurrentlyPending
+  // Determine current state
+  const isCurrentlyImporting = isImporting || currentImportStatus === "importing"
   const isCurrentlyFailed = isFailed || currentImportStatus === "failed"
   const isBlocked = isCurrentlyImporting || isCurrentlyFailed
 

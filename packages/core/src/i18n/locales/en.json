@@ -134,8 +134,6 @@
     },
     "importBlocked": "This book is currently being imported. Please wait for the import to complete.",
     "import": {
-      "pending": "Preparing...",
-      "pendingText": "Getting ready to enrich word data",
       "importing": "Importing...",
       "progressText": "{{current}} / {{total}} words processed",
       "failed": "Import Failed",
@@ -146,8 +144,6 @@
       "badge": "Importing",
       "badgeFailed": "Failed",
       "blockedHint": "Please wait for import to complete",
-      "tooltipPending": "Preparing Import",
-      "tooltipPendingDesc": "The system is preparing to enrich your vocabulary with definitions, examples, and more.",
       "tooltipImporting": "Import in Progress",
       "tooltipTotal": "Total words: {{total}}",
       "tooltipCompleted": "Completed: {{completed}}",

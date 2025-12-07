@@ -134,8 +134,6 @@
     },
     "importBlocked": "该词本正在导入中，请等待导入完成。",
     "import": {
-      "pending": "准备中...",
-      "pendingText": "正在准备丰富单词数据",
       "importing": "导入中...",
       "progressText": "{{current}} / {{total}} 个单词已处理",
       "failed": "导入失败",
@@ -146,8 +144,6 @@
       "badge": "导入中",
       "badgeFailed": "导入失败",
       "blockedHint": "请等待导入完成",
-      "tooltipPending": "正在准备导入",
-      "tooltipPendingDesc": "系统正在准备为您的词汇添加释义、例句等丰富内容。",
       "tooltipImporting": "正在导入数据",
       "tooltipTotal": "总单词数：{{total}}",
       "tooltipCompleted": "已完成：{{completed}}",
@@ -363,5 +359,26 @@
     },
     "loading": "正在加载仪表盘...",
     "error": "哎呀！出了点问题"
+  },
+  "settings": {
+    "title": "设置",
+    "description": "管理您的账户设置和偏好",
+    "notAvailableInSaaS": "设置功能在SaaS模式下不可用。请使用自托管模式来配置API密钥。",
+    "save": "保存",
+    "saving": "保存中...",
+    "llmApiKey": {
+      "title": "LLM API密钥",
+      "description": "配置您的LLM API密钥用于词汇丰富化（仅限自托管模式）",
+      "label": "API密钥",
+      "placeholder": "输入您的Gemini API密钥",
+      "hint": "您的API密钥将被加密并安全存储。它将用于为词汇添加释义、例句等内容。",
+      "configured": "API密钥已配置",
+      "saved": "API密钥保存成功",
+      "show": "显示",
+      "hide": "隐藏"
+    },
+    "errors": {
+      "saveFailed": "保存设置失败，请重试。"
+    }
   }
 }

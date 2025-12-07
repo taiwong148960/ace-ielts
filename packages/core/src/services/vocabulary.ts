@@ -15,6 +15,10 @@ import type {
   UpdateBookSettingsInput
 } from "../types/vocabulary"
 import { DEFAULT_BOOK_SETTINGS as DEFAULT_SETTINGS, BOOK_COVER_COLORS } from "../types/vocabulary"
+import { createLogger } from "../utils/logger"
+
+// Create logger for this service
+const logger = createLogger("VocabularyService")
 
 /**
  * Vocabulary API interface
@@ -43,7 +47,7 @@ export interface IVocabularyApi {
  */
 export async function getSystemBooks(): Promise<VocabularyBook[]> {
   if (!isSupabaseInitialized()) {
-    console.warn("Supabase not initialized, returning empty array")
+    logger.warn("Supabase not initialized", { operation: "getSystemBooks" })
     return []
   }
 
@@ -55,7 +59,7 @@ export async function getSystemBooks(): Promise<VocabularyBook[]> {
     .order("name")
 
   if (error) {
-    console.error("Error fetching system books:", error)
+    logger.error("Failed to fetch system books", {}, error)
     throw new Error("Failed to fetch system vocabulary books")
   }
 
@@ -67,7 +71,7 @@ export async function getSystemBooks(): Promise<VocabularyBook[]> {
  */
 export async function getUserBooks(userId: string): Promise<VocabularyBook[]> {
   if (!isSupabaseInitialized()) {
-    console.warn("Supabase not initialized, returning empty array")
+    logger.warn("Supabase not initialized", { operation: "getUserBooks" })
     return []
   }
 
@@ -80,7 +84,7 @@ export async function getUserBooks(userId: string): Promise<VocabularyBook[]> {
     .order("updated_at", { ascending: false })
 
   if (error) {
-    console.error("Error fetching user books:", error)
+    logger.error("Failed to fetch user books", { userId }, error)
     throw new Error("Failed to fetch user vocabulary books")
   }
 
@@ -94,7 +98,7 @@ export async function getUserBooksWithProgress(
   userId: string
 ): Promise<VocabularyBookWithProgress[]> {
   if (!isSupabaseInitialized()) {
-    console.warn("Supabase not initialized, returning empty array")
+    logger.warn("Supabase not initialized", { operation: "getUserBooksWithProgress" })
     return []
   }
 
@@ -109,7 +113,7 @@ export async function getUserBooksWithProgress(
     .order("updated_at", { ascending: false })
 
   if (booksError) {
-    console.error("Error fetching user books:", booksError)
+    logger.error("Failed to fetch user books with progress", { userId }, booksError)
     throw new Error("Failed to fetch user vocabulary books")
   }
 
@@ -126,7 +130,7 @@ export async function getUserBooksWithProgress(
     .in("book_id", bookIds)
 
   if (progressError) {
-    console.error("Error fetching book progress:", progressError)
+    logger.warn("Failed to fetch book progress, returning books without progress", { userId }, progressError)
     // Don't throw, just return books without progress
     return books
   }
@@ -147,7 +151,7 @@ export async function getSystemBooksWithProgress(
   userId: string
 ): Promise<VocabularyBookWithProgress[]> {
   if (!isSupabaseInitialized()) {
-    console.warn("Supabase not initialized, returning empty array")
+    logger.warn("Supabase not initialized", { operation: "getSystemBooksWithProgress" })
     return []
   }
 
@@ -161,7 +165,7 @@ export async function getSystemBooksWithProgress(
     .order("name")
 
   if (booksError) {
-    console.error("Error fetching system books:", booksError)
+    logger.error("Failed to fetch system books with progress", {}, booksError)
     throw new Error("Failed to fetch system vocabulary books")
   }
 
@@ -178,7 +182,7 @@ export async function getSystemBooksWithProgress(
     .in("book_id", bookIds)
 
   if (progressError) {
-    console.error("Error fetching book progress:", progressError)
+    logger.warn("Failed to fetch book progress for system books", { userId }, progressError)
     return books
   }
 
@@ -210,7 +214,7 @@ export async function getBookById(bookId: string): Promise<VocabularyBook | null
     if (error.code === "PGRST116") {
       return null // Not found
     }
-    console.error("Error fetching book:", error)
+    logger.error("Failed to fetch book", { bookId }, error)
     throw new Error("Failed to fetch vocabulary book")
   }
 
@@ -240,7 +244,7 @@ export async function createBook(
     is_system_book: false,
     user_id: userId,
     word_count: input.words.length,
-    import_status: "pending" as const,
+    import_status: null, // Will be set to "importing" when import starts
     import_progress: 0,
     import_total: input.words.length
   }
@@ -252,9 +256,11 @@ export async function createBook(
     .single()
 
   if (bookError) {
-    console.error("Error creating book:", bookError)
+    logger.error("Failed to create book", { userId, bookName: input.name }, bookError)
     throw new Error("Failed to create vocabulary book")
   }
+  
+  logger.info("Vocabulary book created", { bookId: book.id, userId, wordCount: input.words.length })
 
   // Add words to the book
   if (input.words.length > 0) {
@@ -272,7 +278,7 @@ export async function createBook(
         .insert(wordsToInsert)
 
       if (wordsError) {
-        console.error("Error adding words:", wordsError)
+        logger.warn("Failed to add words during book creation", { bookId: book.id }, wordsError)
         // Don't throw - book was created, just words failed
       }
     }
@@ -331,10 +337,11 @@ export async function updateBook(
     .single()
 
   if (error) {
-    console.error("Error updating book:", error)
+    logger.error("Failed to update book", { bookId }, error)
     throw new Error("Failed to update vocabulary book")
   }
-
+  
+  logger.info("Vocabulary book updated", { bookId })
   return data
 }
 
@@ -357,9 +364,11 @@ export async function deleteBook(bookId: string, userId: string): Promise<void> 
     .eq("is_system_book", false)
 
   if (error) {
-    console.error("Error deleting book:", error)
+    logger.error("Failed to delete book", { bookId, userId }, error)
     throw new Error("Failed to delete vocabulary book")
   }
+  
+  logger.info("Vocabulary book deleted", { bookId, userId })
 }
 
 /**
@@ -378,7 +387,7 @@ export async function getBookWords(bookId: string): Promise<VocabularyWord[]> {
     .order("word")
 
   if (error) {
-    console.error("Error fetching words:", error)
+    logger.error("Failed to fetch words", { bookId }, error)
     throw new Error("Failed to fetch vocabulary words")
   }
 
@@ -416,9 +425,11 @@ export async function addWords(
     .select()
 
   if (error) {
-    console.error("Error adding words:", error)
+    logger.error("Failed to add words", { bookId, wordCount: wordsToInsert.length }, error)
     throw new Error("Failed to add vocabulary words")
   }
+  
+  logger.info("Words added to book", { bookId, wordCount: wordsToInsert.length })
 
   // Update word count in the book
   const { count } = await supabase
@@ -452,7 +463,7 @@ export async function deleteWord(wordId: string, bookId: string): Promise<void> 
     .eq("id", wordId)
 
   if (error) {
-    console.error("Error deleting word:", error)
+    logger.error("Failed to delete word", { wordId, bookId }, error)
     throw new Error("Failed to delete vocabulary word")
   }
 
@@ -493,7 +504,7 @@ export async function getBookProgress(
     if (error.code === "PGRST116") {
       return null // Not found
     }
-    console.error("Error fetching book progress:", error)
+    logger.error("Failed to fetch book progress", { userId, bookId }, error)
     throw new Error("Failed to fetch book progress")
   }
 
@@ -535,7 +546,7 @@ export async function getBookSettings(
         updated_at: new Date().toISOString()
       }
     }
-    console.error("Error fetching book settings:", error)
+    logger.error("Failed to fetch book settings", { userId, bookId }, error)
     throw new Error("Failed to fetch book settings")
   }
 
@@ -592,10 +603,11 @@ export async function updateBookSettings(
       .single()
 
     if (error) {
-      console.error("Error updating book settings:", error)
+      logger.error("Failed to update book settings", { userId, bookId }, error)
       throw new Error("Failed to update book settings")
     }
-
+    
+    logger.info("Book settings updated", { userId, bookId })
     return data
   } else {
     // Create new settings
@@ -611,10 +623,11 @@ export async function updateBookSettings(
       .single()
 
     if (error) {
-      console.error("Error creating book settings:", error)
+      logger.error("Failed to create book settings", { userId, bookId }, error)
       throw new Error("Failed to create book settings")
     }
-
+    
+    logger.info("Book settings created", { userId, bookId })
     return data
   }
 }

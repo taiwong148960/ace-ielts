@@ -21,6 +21,10 @@ import {
   refreshSession as authRefreshSession
 } from "../services/auth"
 import { isSupabaseInitialized } from "../services/supabase"
+import { createLogger } from "../utils/logger"
+
+// Create logger for auth context
+const logger = createLogger("AuthContext")
 
 /**
  * Default auth state
@@ -109,7 +113,7 @@ export function AuthProvider({
         updateAuthState(session, false)
       })
       .catch((error) => {
-        console.error("Failed to get initial session:", error)
+        logger.error("Failed to get initial session", {}, error instanceof Error ? error : new Error(String(error)))
         setAuthState({
           ...defaultAuthState,
           isLoading: false
@@ -132,9 +136,10 @@ export function AuthProvider({
   const signInWithOAuth = useCallback(
     async (provider: OAuthProvider) => {
       try {
+        logger.info("Initiating OAuth sign in", { provider })
         await authSignInWithOAuth(provider, redirectTo)
       } catch (error) {
-        console.error("Sign in error:", error)
+        logger.error("OAuth sign in failed", { provider }, error instanceof Error ? error : new Error(String(error)))
         throw error
       }
     },
@@ -146,10 +151,12 @@ export function AuthProvider({
    */
   const signOut = useCallback(async () => {
     try {
+      logger.info("Signing out user")
       await authSignOut()
       updateAuthState(null, false)
+      logger.info("User signed out successfully")
     } catch (error) {
-      console.error("Sign out error:", error)
+      logger.error("Sign out failed", {}, error instanceof Error ? error : new Error(String(error)))
       throw error
     }
   }, [updateAuthState])
@@ -159,10 +166,11 @@ export function AuthProvider({
    */
   const refreshSession = useCallback(async () => {
     try {
+      logger.debug("Refreshing auth session")
       const session = await authRefreshSession()
       updateAuthState(session, false)
     } catch (error) {
-      console.error("Refresh session error:", error)
+      logger.error("Session refresh failed", {}, error instanceof Error ? error : new Error(String(error)))
       throw error
     }
   }, [updateAuthState])

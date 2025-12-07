@@ -23,17 +23,13 @@ export function useVocabularyImport(bookId: string | null, userId: string | null
     queryFn: () => (bookId ? getImportProgress(bookId) : null),
     enabled: !!bookId,
     refetchInterval: (query) => {
-      // Poll every 1 second if importing or pending (to catch failures quickly)
+      // Poll every 1 second if importing (to catch failures quickly)
       // Also poll for a short time after completion to catch any final state changes
       const data = query.state.data
       if (!data) return false
       
       if (data.status === "importing") {
         return 1000 // Poll every 1 second while importing
-      }
-      
-      if (data.status === "pending") {
-        return 1000 // Poll every 1 second if still pending (waiting to start)
       }
       
       // For completed/failed, poll once more after 1 second to catch any final updates
@@ -89,7 +85,6 @@ export function useVocabularyImport(bookId: string | null, userId: string | null
     isImporting: progress?.status === "importing",
     isCompleted: progress?.status === "completed",
     isFailed: progress?.status === "failed",
-    isPending: progress?.status === "pending" || !progress,
 
     // Actions
     startImport: () => startImportMutation.mutate(),

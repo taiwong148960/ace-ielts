@@ -3,13 +3,14 @@
  * User settings including LLM API key configuration (self-hosted mode only)
  */
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Settings as SettingsIcon, Key, Save, AlertCircle, CheckCircle2 } from "lucide-react"
 import {
   useTranslation,
   useAuth,
   useUserSettings,
+  useNavigation,
   isSelfHostedMode
 } from "@ace-ielts/core"
 
@@ -28,14 +29,38 @@ import {
 
 export function Settings() {
   const { t } = useTranslation()
+  const navigation = useNavigation()
   const { user } = useAuth()
-  const { isLoading, hasApiKey, updateSettings, isUpdating, updateError } = useUserSettings(user?.id ?? null)
+  const { isLoading, apiKey: storedApiKey, updateSettings, isUpdating, updateError } = useUserSettings(user?.id ?? null)
 
   const [apiKey, setApiKey] = useState("")
   const [showApiKey, setShowApiKey] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
 
   const isSelfHosted = isSelfHostedMode()
+
+  // Load stored API key into input field on initial load only
+  useEffect(() => {
+    if (storedApiKey !== undefined && !isInitialized) {
+      setApiKey(storedApiKey || "")
+      setIsInitialized(true)
+    }
+  }, [storedApiKey, isInitialized])
+
+  const handleNavigate = (itemId: string) => {
+    if (itemId === "settings") {
+      navigation.navigate("/settings")
+    } else if (itemId === "dashboard") {
+      navigation.navigate("/dashboard")
+    } else if (itemId === "vocabulary") {
+      navigation.navigate("/vocabulary")
+    } else if (itemId === "profile") {
+      navigation.navigate("/profile")
+    } else {
+      navigation.navigate(`/${itemId}`)
+    }
+  }
 
   const handleSaveApiKey = async () => {
     if (!apiKey.trim()) {
@@ -44,7 +69,6 @@ export function Settings() {
 
     try {
       await updateSettings({ llm_api_key: apiKey.trim() })
-      setApiKey("")
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (error) {
@@ -55,7 +79,7 @@ export function Settings() {
   // Don't show settings in SaaS mode
   if (!isSelfHosted) {
     return (
-      <MainLayout activeNav="settings" onNavigate={() => {}}>
+      <MainLayout activeNav="settings" onNavigate={handleNavigate}>
         <motion.div
           className="max-w-4xl mx-auto"
           variants={fadeInUp}
@@ -78,7 +102,7 @@ export function Settings() {
   }
 
   return (
-    <MainLayout activeNav="settings" onNavigate={() => {}}>
+    <MainLayout activeNav="settings" onNavigate={handleNavigate}>
       <motion.div
         className="max-w-4xl mx-auto flex flex-col gap-lg"
         variants={fadeInUp}
@@ -108,16 +132,6 @@ export function Settings() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Current Status */}
-            {hasApiKey && (
-              <div className="flex items-center gap-2 p-3 bg-success/10 border border-success/20 rounded-md">
-                <CheckCircle2 className="h-4 w-4 text-success" />
-                <span className="text-sm text-success">
-                  {t("settings.llmApiKey.configured")}
-                </span>
-              </div>
-            )}
-
             {/* API Key Input */}
             <div className="space-y-2">
               <Label htmlFor="api-key">

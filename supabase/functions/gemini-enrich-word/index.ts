@@ -17,6 +17,8 @@ declare const Deno: {
 
 const DEFAULT_MODEL = "gemini-1.5-pro"
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+const TTS_BASE_URL = "https://texttospeech.googleapis.com/v1"
+const DEFAULT_VOICE = "en-US-Neural2-F" // Professional female voice
 
 interface WordDetailData {
   definitions: Array<{
@@ -42,6 +44,63 @@ interface WordDetailData {
   easilyConfused?: string[]
   usageFrequency?: "common" | "uncommon" | "rare"
   tenses?: string[]
+}
+
+interface ExampleAudioData {
+  sentence: string
+  audio_url: string
+}
+
+/**
+ * Generate audio using Google Cloud Text-to-Speech API
+ */
+async function generateAudio(
+  text: string,
+  apiKey: string,
+  voice: string = DEFAULT_VOICE
+): Promise<string> {
+  const url = `${TTS_BASE_URL}/text:synthesize?key=${apiKey}`
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      input: {
+        text: text
+      },
+      voice: {
+        languageCode: "en-US",
+        name: voice,
+        ssmlGender: voice.includes("Neural2-A") || 
+                   voice.includes("Neural2-B") || 
+                   voice.includes("Neural2-E") || 
+                   voice.includes("Neural2-F") || 
+                   voice.includes("Neural2-G") 
+          ? "FEMALE" : "MALE"
+      },
+      audioConfig: {
+        audioEncoding: "MP3",
+        speakingRate: 1.0,
+        pitch: 0.0,
+        volumeGainDb: 0.0
+      }
+    })
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`TTS API error: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  if (!data.audioContent) {
+    throw new Error("No audio content returned from TTS API")
+  }
+
+  // Return data URL (base64 encoded MP3)
+  return `data:audio/mp3;base64,${data.audioContent}`
 }
 
 Deno.serve(async (req) => {
@@ -242,9 +301,50 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
       )
     }
 
-    // Return enriched word data
+    // Generate audio for word and example sentences
+    let wordAudioUrl: string | null = null
+    let exampleAudioUrls: ExampleAudioData[] | null = null
+
+    try {
+      // Generate word pronunciation audio
+      wordAudioUrl = await generateAudio(word, geminiApiKey, DEFAULT_VOICE)
+
+      // Generate audio for example sentences
+      if (wordData.exampleSentences && wordData.exampleSentences.length > 0) {
+        const audioPromises = wordData.exampleSentences.map(async (ex) => {
+          try {
+            const audioUrl = await generateAudio(ex.sentence, geminiApiKey, DEFAULT_VOICE)
+            return {
+              sentence: ex.sentence,
+              audio_url: audioUrl
+            }
+          } catch (error) {
+            console.error(`Failed to generate audio for sentence: "${ex.sentence}"`, error)
+            return {
+              sentence: ex.sentence,
+              audio_url: ""
+            }
+          }
+        })
+
+        exampleAudioUrls = await Promise.all(audioPromises)
+      }
+    } catch (audioError) {
+      // Don't fail the entire request if audio generation fails
+      console.warn(`Audio generation failed for word "${word}":`, audioError)
+    }
+
+    // Return enriched word data with audio URLs
+    const responseData = {
+      ...wordData,
+      _audio: {
+        word_audio_url: wordAudioUrl,
+        example_audio_urls: exampleAudioUrls
+      }
+    }
+
     return new Response(
-      JSON.stringify(wordData),
+      JSON.stringify(responseData),
       {
         status: 200,
         headers: {

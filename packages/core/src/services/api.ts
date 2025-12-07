@@ -19,6 +19,10 @@ import type {
 import { isSupabaseInitialized, getSupabase } from "./supabase"
 import { getCurrentUser } from "./auth"
 import { userToProfile } from "../types/auth"
+import { createLogger, startTimer } from "../utils/logger"
+
+// Create logger for this service
+const logger = createLogger("DashboardApiService")
 
 /**
  * Configuration for API behavior
@@ -86,7 +90,7 @@ async function getStudyStats(userId: string): Promise<StudyStats> {
     .eq("user_id", userId)
 
   if (progressError) {
-    console.error("Error fetching book progress:", progressError)
+    logger.warn("Failed to fetch book progress for study stats", { userId }, progressError)
   }
 
   const dayStreak = progressData && progressData.length > 0
@@ -105,7 +109,7 @@ async function getStudyStats(userId: string): Promise<StudyStats> {
     .gte("reviewed_at", todayStart)
 
   if (todayError) {
-    console.error("Error fetching today's reviews:", todayError)
+    logger.warn("Failed to fetch today's reviews", { userId }, todayError)
   }
 
   const todayMinutes = todayReviews
@@ -121,7 +125,7 @@ async function getStudyStats(userId: string): Promise<StudyStats> {
     .eq("user_id", userId)
 
   if (allError) {
-    console.error("Error fetching all reviews:", allError)
+    logger.warn("Failed to fetch all reviews", { userId }, allError)
   }
 
   const totalMinutes = allReviews
@@ -223,7 +227,7 @@ async function getBrowsingHistory(
     .limit(limit)
 
   if (error) {
-    console.error("Error fetching browsing history:", error)
+    logger.warn("Failed to fetch browsing history", { userId, limit }, error)
     return []
   }
 
@@ -248,12 +252,12 @@ async function getBrowsingHistory(
   ])
 
   if (wordsResult.error) {
-    console.error("Error fetching words:", wordsResult.error)
+    logger.warn("Failed to fetch words for browsing history", { userId }, wordsResult.error)
     return []
   }
 
   if (booksResult.error) {
-    console.error("Error fetching books:", booksResult.error)
+    logger.warn("Failed to fetch books for browsing history", { userId }, booksResult.error)
     return []
   }
 
@@ -369,7 +373,7 @@ async function calculateTakeawayStats(
     .gte("reviewed_at", startDate.toISOString())
 
   if (error) {
-    console.error("Error fetching reviews for takeaway stats:", error)
+    logger.warn("Failed to fetch reviews for takeaway stats", { userId, timeRange }, error)
   }
 
   const uniqueWords = reviews

@@ -5,6 +5,10 @@
 
 import { getSupabase, isSupabaseInitialized } from "./supabase"
 import type { UserSettings, UpdateUserSettingsInput } from "../types/user-settings"
+import { createLogger } from "../utils/logger"
+
+// Create logger for this service
+const logger = createLogger("UserSettingsService")
 
 /**
  * Get user settings
@@ -25,7 +29,7 @@ export async function getUserSettings(userId: string): Promise<UserSettings | nu
     if (error.code === "PGRST116") {
       return null // Not found
     }
-    console.error("Error fetching user settings:", error)
+    logger.error("Failed to fetch user settings", { userId }, error)
     throw new Error("Failed to fetch user settings")
   }
 
@@ -64,10 +68,11 @@ async function createUserSettings(userId: string): Promise<UserSettings> {
     .single()
 
   if (error) {
-    console.error("Error creating user settings:", error)
+    logger.error("Failed to create user settings", { userId }, error)
     throw new Error("Failed to create user settings")
   }
-
+  
+  logger.info("User settings created", { userId })
   return data
 }
 
@@ -119,10 +124,11 @@ export async function updateUserSettings(
       .single()
 
     if (error) {
-      console.error("Error updating user settings:", error)
+      logger.error("Failed to update user settings", { userId }, error)
       throw new Error("Failed to update user settings")
     }
-
+    
+    logger.info("User settings updated", { userId })
     return data
   } else {
     // Create new settings
@@ -137,10 +143,11 @@ export async function updateUserSettings(
       .single()
 
     if (error) {
-      console.error("Error creating user settings:", error)
+      logger.error("Failed to create user settings on update", { userId }, error)
       throw new Error("Failed to create user settings")
     }
-
+    
+    logger.info("User settings created", { userId })
     return data
   }
 }
@@ -159,8 +166,8 @@ export async function getLLMApiKey(userId: string): Promise<string | null> {
   // TODO: Use proper decryption (currently using base64)
   try {
     return atob(settings.llm_api_key_encrypted) // Temporary: use proper decryption
-  } catch {
-    console.error("Failed to decrypt API key")
+  } catch (error) {
+    logger.error("Failed to decrypt API key", { userId }, error instanceof Error ? error : new Error("Decryption failed"))
     return null
   }
 }

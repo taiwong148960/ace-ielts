@@ -17,6 +17,10 @@ import type {
   ReviewLog
 } from "../types/vocabulary"
 import { GRADE_TO_RATING, type SpacedRepetitionGrade } from "../types/vocabulary"
+import { createLogger } from "../utils/logger"
+
+// Create logger for this service
+const logger = createLogger("VocabularyDetailService")
 
 /**
  * Supabase query result type for word progress with joined vocabulary_words
@@ -57,7 +61,7 @@ export async function getBookWithDetails(
   stats: BookDetailStats
 } | null> {
   if (!isSupabaseInitialized()) {
-    console.warn("Supabase not initialized")
+    logger.warn("Supabase not initialized", { operation: "getBookWithDetails" })
     return null
   }
 
@@ -71,7 +75,7 @@ export async function getBookWithDetails(
     .single()
 
   if (bookError || !book) {
-    console.error("Error fetching book:", bookError)
+    logger.error("Failed to fetch book details", { bookId, userId }, bookError || new Error("Book not found"))
     return null
   }
 
@@ -395,7 +399,7 @@ export async function processWordReview(
       .single()
 
     if (error) {
-      console.error("Error creating progress:", error)
+      logger.error("Failed to create word progress", { userId, wordId, bookId }, error)
       return null
     }
     progress = newProgress
@@ -445,7 +449,7 @@ export async function processWordReview(
     .single()
 
   if (updateError) {
-    console.error("Error updating progress:", updateError)
+    logger.error("Failed to update word progress", { userId, wordId, bookId }, updateError)
     return null
   }
 
@@ -622,10 +626,11 @@ export async function initializeBookProgress(
     .single()
 
   if (error) {
-    console.error("Error initializing book progress:", error)
+    logger.error("Failed to initialize book progress", { userId, bookId }, error)
     return null
   }
-
+  
+  logger.info("Book progress initialized", { userId, bookId, wordCount })
   return progress
 }
 

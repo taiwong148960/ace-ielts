@@ -1,9 +1,15 @@
 /**
  * Gemini API Service
  * Handles word enrichment using Google Gemini API
+ * Also handles audio generation using Google Cloud Text-to-Speech API
  */
 
-import type { WordDetailData } from "../types/vocabulary"
+import type { WordDetailData, AudioConfig, ExampleAudioData } from "../types/vocabulary"
+import { DEFAULT_AUDIO_CONFIG } from "../types/vocabulary"
+import { createLogger } from "../utils/logger"
+
+// Create logger for this service
+const logger = createLogger("GeminiService")
 
 /**
  * Gemini API configuration
@@ -124,7 +130,12 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error("Gemini API error:", errorText)
+      logger.error("Gemini API request failed", {
+        word,
+        status: response.status,
+        statusText: response.statusText,
+        errorBody: errorText.substring(0, 200) // Truncate for logging
+      })
       
       if (response.status === 401 || response.status === 403) {
         throw new Error("Invalid API key. Please check your Gemini API key.")
@@ -151,7 +162,10 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
       const cleanedContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
       wordData = JSON.parse(cleanedContent)
     } catch {
-      console.error("Failed to parse Gemini response:", content)
+      logger.error("Failed to parse Gemini response", {
+        word,
+        responsePreview: content.substring(0, 200) // Truncate for logging
+      })
       throw new Error("Invalid JSON response from Gemini API")
     }
 
@@ -205,10 +219,139 @@ export async function enrichWordWithRetry(
         throw lastError
       }
 
-      console.warn(`Attempt ${attempt + 1} failed for word "${word}":`, lastError.message)
+      logger.warn("Word enrichment attempt failed", {
+        word,
+        attempt: attempt + 1,
+        maxAttempts: maxRetries
+      }, lastError)
     }
   }
 
   throw lastError || new Error("Failed to enrich word after retries")
+}
+
+/**
+ * Google Cloud Text-to-Speech API base URL
+ */
+const TTS_BASE_URL = "https://texttospeech.googleapis.com/v1"
+
+/**
+ * Generate audio for a word or sentence using Google Cloud Text-to-Speech API
+ * Returns a data URL (base64 encoded audio) or a public URL if stored
+ */
+export async function generateAudio(
+  text: string,
+  apiKey: string,
+  config: AudioConfig = DEFAULT_AUDIO_CONFIG
+): Promise<string> {
+  if (!apiKey) {
+    throw new Error("API key is required for audio generation")
+  }
+
+  const url = `${TTS_BASE_URL}/text:synthesize?key=${apiKey}`
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        input: {
+          text: text
+        },
+        voice: {
+          languageCode: "en-US",
+          name: config.voice,
+          ssmlGender: config.voice.includes("Neural2-A") || 
+                     config.voice.includes("Neural2-B") || 
+                     config.voice.includes("Neural2-E") || 
+                     config.voice.includes("Neural2-F") || 
+                     config.voice.includes("Neural2-G") 
+            ? "FEMALE" : "MALE"
+        },
+        audioConfig: {
+          audioEncoding: "MP3",
+          speakingRate: config.speakingRate || 1.0,
+          pitch: config.pitch || 0.0,
+          volumeGainDb: config.volumeGainDb || 0.0
+        }
+      })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      logger.error("TTS API request failed", {
+        textPreview: text.substring(0, 50),
+        status: response.status,
+        statusText: response.statusText
+      })
+      
+      if (response.status === 401 || response.status === 403) {
+        throw new Error("Invalid API key for Text-to-Speech. Please check your Google Cloud API key.")
+      }
+      if (response.status === 429) {
+        throw new Error("TTS API rate limit exceeded. Please try again later.")
+      }
+      
+      throw new Error(`TTS API error: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    
+    if (!data.audioContent) {
+      throw new Error("No audio content returned from TTS API")
+    }
+
+    // Return data URL (base64 encoded MP3)
+    return `data:audio/mp3;base64,${data.audioContent}`
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error
+    }
+    throw new Error(`Failed to generate audio: ${String(error)}`)
+  }
+}
+
+/**
+ * Generate audio for a word
+ */
+export async function generateWordAudio(
+  word: string,
+  apiKey: string,
+  config?: AudioConfig
+): Promise<string> {
+  return generateAudio(word, apiKey, config)
+}
+
+/**
+ * Generate audio for multiple example sentences
+ * Returns array of audio data with sentence text
+ */
+export async function generateExampleAudios(
+  sentences: string[],
+  apiKey: string,
+  config?: AudioConfig
+): Promise<ExampleAudioData[]> {
+  const audioPromises = sentences.map(async (sentence) => {
+    try {
+      const audioUrl = await generateAudio(sentence, apiKey, config)
+      return {
+        sentence,
+        audio_url: audioUrl
+      }
+    } catch (error) {
+      logger.warn("Failed to generate audio for sentence", {
+        sentencePreview: sentence.substring(0, 50)
+      }, error instanceof Error ? error : new Error(String(error)))
+      // Return empty audio URL on failure (don't fail entire operation)
+      return {
+        sentence,
+        audio_url: ""
+      }
+    }
+  })
+
+  return Promise.all(audioPromises)
 }
 

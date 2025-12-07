@@ -6,7 +6,8 @@ import {
   VocabularyBookDetail,
   VocabularyLearning,
   Login,
-  AuthCallback
+  AuthCallback,
+  Settings
 } from "@ace-ielts/ui"
 import { useAuth } from "@ace-ielts/core"
 
@@ -76,6 +77,14 @@ export function App() {
         element={
           <ProtectedRoute>
             <VocabularyLearning />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <Settings />
           </ProtectedRoute>
         }
       />

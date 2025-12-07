@@ -4,15 +4,176 @@
  */
 
 import { getSupabase, isSupabaseInitialized } from "./supabase"
-import { enrichWordWithRetry } from "./gemini"
+import { enrichWordWithRetry, generateWordAudio, generateExampleAudios } from "./gemini"
 import { getLLMApiKey } from "./user-settings"
 import { isSaaSMode, getEnvironmentUrls } from "../config/deployment"
-import type { WordDetailData, ImportStatus, ImportProgress } from "../types/vocabulary"
+import type { WordDetailData, ImportStatus, ImportProgress, AudioConfig, ExampleAudioData } from "../types/vocabulary"
+import { DEFAULT_AUDIO_CONFIG } from "../types/vocabulary"
 import { getBookWords } from "./vocabulary"
+import { createLogger, startTimer } from "../utils/logger"
+
+// Create logger for this service
+const logger = createLogger("VocabularyImportService")
+
+/**
+ * Maximum number of retry attempts for a single word
+ */
+const MAX_RETRY_ATTEMPTS = 3
+
+/**
+ * Helper function to import a single word with retry logic
+ * Returns true if successful, false if failed after all retries
+ * Retry count is tracked only in memory, starting from 0 for each word
+ */
+async function importWordWithRetry(
+  word: { id: string; word: string },
+  apiKey: string | null,
+  supabase: ReturnType<typeof getSupabase>
+): Promise<{ success: boolean; error: string | null }> {
+  let attemptCount = 0
+  let lastError: string | null = null
+
+  // Try to import the word, with up to MAX_RETRY_ATTEMPTS retries
+  // Each word starts from 0, retry count is only tracked in memory
+  while (attemptCount < MAX_RETRY_ATTEMPTS) {
+    try {
+      // Update word import status
+      await supabase
+        .from("vocabulary_words")
+        .update({
+          import_status: "importing"
+        })
+        .eq("id", word.id)
+
+      // Enrich word using Gemini API
+      let enrichedWordData: WordDetailData
+      let wordAudioUrl: string | null = null
+      let exampleAudioUrls: ExampleAudioData[] | null = null
+
+      if (isSaaSMode()) {
+        // Call Edge Function for SaaS mode
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          throw new Error("Not authenticated")
+        }
+
+        const { supabaseUrl } = getEnvironmentUrls()
+        const functionUrl = `${supabaseUrl}/functions/v1/gemini-enrich-word`
+
+        const response = await fetch(functionUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ word: word.word })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
+          throw new Error(errorData.error || `Edge Function error: ${response.status}`)
+        }
+
+        const responseData = await response.json()
+        enrichedWordData = responseData
+
+        // Extract audio URLs from Edge Function response
+        if (responseData._audio) {
+          wordAudioUrl = responseData._audio.word_audio_url || null
+          exampleAudioUrls = responseData._audio.example_audio_urls || null
+        }
+      } else {
+        // Use user's API key for self-hosted mode
+        enrichedWordData = await enrichWordWithRetry(word.word, {
+          apiKey: apiKey!
+        })
+
+        // Generate audio for word and example sentences (self-hosted mode)
+        const audioConfig: AudioConfig = DEFAULT_AUDIO_CONFIG
+
+        try {
+          // Generate word pronunciation audio
+          wordAudioUrl = await generateWordAudio(word.word, apiKey!, audioConfig)
+
+          // Generate audio for example sentences
+          if (enrichedWordData.exampleSentences && enrichedWordData.exampleSentences.length > 0) {
+            const exampleSentences = enrichedWordData.exampleSentences.map(ex => ex.sentence)
+            exampleAudioUrls = await generateExampleAudios(exampleSentences, apiKey!, audioConfig)
+          }
+        } catch (audioError) {
+          // Don't fail the entire import if audio generation fails
+          logger.warn(
+            "Audio generation failed",
+            { wordId: word.id, word: word.word },
+            audioError instanceof Error ? audioError : new Error(String(audioError))
+          )
+          // Continue with word data update even if audio fails
+        }
+      }
+
+      // Update word with enriched data and audio URLs
+      const updateData: Record<string, unknown> = {
+        word_details: enrichedWordData as unknown as Record<string, unknown>,
+        import_status: "completed",
+        import_error: null
+      }
+
+      if (wordAudioUrl) {
+        updateData.word_audio_url = wordAudioUrl
+      }
+
+      if (exampleAudioUrls && exampleAudioUrls.length > 0) {
+        updateData.example_audio_urls = exampleAudioUrls
+      }
+
+      const { error: wordUpdateError } = await supabase
+        .from("vocabulary_words")
+        .update(updateData)
+        .eq("id", word.id)
+
+      if (wordUpdateError) {
+        throw new Error(`Failed to update word: ${wordUpdateError.message}`)
+      }
+
+      // Success! Return immediately
+      return { success: true, error: null }
+    } catch (error) {
+      attemptCount++
+      lastError = error instanceof Error ? error.message : String(error)
+      
+      logger.warn(
+        "Word import attempt failed",
+        { wordId: word.id, word: word.word, attempt: attemptCount, maxAttempts: MAX_RETRY_ATTEMPTS },
+        error instanceof Error ? error : new Error(lastError)
+      )
+
+      // If this was the last attempt, mark as failed
+      if (attemptCount >= MAX_RETRY_ATTEMPTS) {
+        await supabase
+          .from("vocabulary_words")
+          .update({
+            import_status: "failed",
+            import_error: lastError
+          })
+          .eq("id", word.id)
+        
+        return { success: false, error: lastError }
+      }
+
+      // Wait a bit before retrying (exponential backoff)
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attemptCount))
+    }
+  }
+
+  // Should not reach here, but just in case
+  return { success: false, error: lastError }
+}
 
 /**
  * Start import workflow for a vocabulary book
  * Enriches all words in the book using Gemini API
+ * Processes words sequentially: one word must complete (or fail after 3 retries) before the next starts
+ * If any word fails after 3 retries, the entire import is marked as failed
  */
 export async function startImport(
   bookId: string,
@@ -42,9 +203,19 @@ export async function startImport(
     .eq("id", bookId)
 
   if (updateError) {
-    console.error("Error updating book import status:", updateError)
+    logger.error("Failed to update book import status", { bookId }, updateError)
     throw new Error("Failed to start import")
   }
+  
+  logger.info("Starting vocabulary book import", { bookId, userId, wordCount: words.length })
+
+  // Reset all words' status to importing for this import session
+  await supabase
+    .from("vocabulary_words")
+    .update({
+      import_status: "importing"
+    })
+    .eq("book_id", bookId)
 
   // Get API key based on deployment mode
   let apiKey: string | null = null
@@ -69,73 +240,14 @@ export async function startImport(
     }
   }
 
-  // Process each word
-  let successCount = 0
-  let failCount = 0
-
+  // Process each word sequentially - one must complete before moving to the next
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
 
-    try {
-      // Update word import status
-      await supabase
-        .from("vocabulary_words")
-        .update({
-          import_status: "importing"
-        })
-        .eq("id", word.id)
+    // Import word with retry logic
+    const result = await importWordWithRetry(word, apiKey, supabase)
 
-      // Enrich word using Gemini API
-      let wordData: WordDetailData
-
-      if (isSaaSMode()) {
-        // Call Edge Function for SaaS mode
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
-          throw new Error("Not authenticated")
-        }
-
-        const { supabaseUrl } = getEnvironmentUrls()
-        const functionUrl = `${supabaseUrl}/functions/v1/gemini-enrich-word`
-
-        const response = await fetch(functionUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({ word: word.word })
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
-          throw new Error(errorData.error || `Edge Function error: ${response.status}`)
-        }
-
-        wordData = await response.json()
-      } else {
-        // Use user's API key for self-hosted mode
-        wordData = await enrichWordWithRetry(word.word, {
-          apiKey: apiKey!
-        })
-      }
-
-      // Update word with enriched data
-      const { error: wordUpdateError } = await supabase
-        .from("vocabulary_words")
-        .update({
-          word_details: wordData as unknown as Record<string, unknown>,
-          import_status: "completed",
-          import_error: null
-        })
-        .eq("id", word.id)
-
-      if (wordUpdateError) {
-        throw new Error(`Failed to update word: ${wordUpdateError.message}`)
-      }
-
-      successCount++
-
+    if (result.success) {
       // Update book progress
       await supabase
         .from("vocabulary_books")
@@ -144,76 +256,49 @@ export async function startImport(
         })
         .eq("id", bookId)
 
-      // Add small delay to avoid rate limiting
+      // Add small delay to avoid rate limiting (only if not the last word)
       if (i < words.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
-    } catch (error) {
-      failCount++
-      const errorMessage = error instanceof Error ? error.message : String(error)
-
-      // Mark word as failed
+    } else {
+      // Word failed after all retries - stop entire import
+      logger.error("Word failed after max retries - stopping import", {
+        bookId,
+        wordId: word.id,
+        word: word.word,
+        attempts: MAX_RETRY_ATTEMPTS
+      })
+      
+      // Mark book import as failed
+      const errorMessage = `Import failed: Word "${word.word}" failed after ${MAX_RETRY_ATTEMPTS} retry attempts. ${result.error}`
+      
       await supabase
-        .from("vocabulary_words")
+        .from("vocabulary_books")
         .update({
           import_status: "failed",
-          import_error: errorMessage
+          import_completed_at: new Date().toISOString(),
+          import_error: errorMessage,
+          import_progress: i // Progress is the number of successfully imported words
         })
-        .eq("id", word.id)
-
-      console.error(`Failed to import word "${word.word}":`, errorMessage)
-
-      // Continue with next word
-    }
-  }
-
-  // Update book import status
-  const finalStatus: ImportStatus = failCount === words.length ? "failed" : "completed"
-  
-  // Get error messages from failed words for summary
-  let errorMessage: string | null = null
-  if (failCount > 0) {
-    const { data: failedWords } = await supabase
-      .from("vocabulary_words")
-      .select("import_error")
-      .eq("book_id", bookId)
-      .eq("import_status", "failed")
-      .not("import_error", "is", null)
-      .limit(5) // Get first 5 errors as sample
-    
-    if (failedWords && failedWords.length > 0) {
-      const errors = failedWords
-        .map(w => w.import_error)
-        .filter((e): e is string => typeof e === "string")
-        .slice(0, 3) // Show up to 3 unique errors
+        .eq("id", bookId)
       
-      if (errors.length > 0) {
-        const uniqueErrors = [...new Set(errors)]
-        if (uniqueErrors.length === 1) {
-          errorMessage = uniqueErrors[0]
-        } else {
-          errorMessage = `${failCount} words failed. Common errors: ${uniqueErrors.join("; ")}`
-        }
-      } else {
-        errorMessage = `${failCount} out of ${words.length} words failed to import`
-      }
-    } else {
-      errorMessage = `${failCount} out of ${words.length} words failed to import`
+      // Stop processing - return early
+      throw new Error(errorMessage)
     }
   }
 
+  // All words imported successfully
   await supabase
     .from("vocabulary_books")
     .update({
-      import_status: finalStatus,
+      import_status: "completed",
       import_completed_at: new Date().toISOString(),
-      import_error: errorMessage
+      import_error: null,
+      import_progress: words.length
     })
     .eq("id", bookId)
-
-  if (failCount > 0) {
-    console.warn(`Import completed with ${failCount} failures and ${successCount} successes out of ${words.length} words`)
-  }
+  
+  logger.info("Vocabulary book import completed", { bookId, wordCount: words.length })
 }
 
 /**
@@ -236,7 +321,7 @@ export async function getImportProgress(bookId: string): Promise<ImportProgress 
   }
 
   return {
-    status: (data.import_status as ImportStatus) || "pending",
+    status: (data.import_status as ImportStatus | null) || null,
     current: data.import_progress || 0,
     total: data.import_total || 0,
     startedAt: data.import_started_at || undefined,
@@ -275,6 +360,8 @@ export async function getFailedWordsErrors(bookId: string): Promise<Array<{ word
 
 /**
  * Retry failed words in a book
+ * Processes words sequentially with retry logic
+ * If any word fails after 3 retries, the retry operation stops
  */
 export async function retryFailedWords(bookId: string, userId: string): Promise<void> {
   if (!isSupabaseInitialized()) {
@@ -289,6 +376,7 @@ export async function retryFailedWords(bookId: string, userId: string): Promise<
     .select("*")
     .eq("book_id", bookId)
     .eq("import_status", "failed")
+    .order("created_at", { ascending: true }) // Process in creation order
 
   if (error || !failedWords || failedWords.length === 0) {
     return // No failed words to retry
@@ -303,67 +391,72 @@ export async function retryFailedWords(bookId: string, userId: string): Promise<
     }
   }
 
-  // Retry each failed word
-  for (const word of failedWords) {
-    try {
-      await supabase
-        .from("vocabulary_words")
-        .update({
-          import_status: "importing"
-        })
-        .eq("id", word.id)
+  // Update book status to importing
+  await supabase
+    .from("vocabulary_books")
+    .update({
+      import_status: "importing"
+    })
+    .eq("id", bookId)
 
-      let wordData: WordDetailData
+  // Retry each failed word sequentially with retry logic
+  let successCount = 0
+  
+  for (let i = 0; i < failedWords.length; i++) {
+    const word = failedWords[i]
+    
+    // Import word with retry logic (retry count starts from 0 in memory)
+    const result = await importWordWithRetry(word, apiKey, supabase)
+
+    if (result.success) {
+      successCount++
       
-      if (isSaaSMode()) {
-        // Call Edge Function
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
-          throw new Error("Not authenticated")
-        }
-
-        const { supabaseUrl } = getEnvironmentUrls()
-        const functionUrl = `${supabaseUrl}/functions/v1/gemini-enrich-word`
-
-        const response = await fetch(functionUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({ word: word.word })
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
-          throw new Error(errorData.error || `Edge Function error: ${response.status}`)
-        }
-
-        wordData = await response.json()
-      } else {
-        wordData = await enrichWordWithRetry(word.word, {
-          apiKey: apiKey!
-        })
+      // Add small delay to avoid rate limiting (only if not the last word)
+      if (i < failedWords.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
       }
-
+    } else {
+      // Word failed after all retries - stop retry operation
+      const errorMessage = `Retry failed: Word "${word.word}" failed after ${MAX_RETRY_ATTEMPTS} retry attempts. ${result.error}`
+      
+      // Update book status
       await supabase
-        .from("vocabulary_words")
-        .update({
-          word_details: wordData as unknown as Record<string, unknown>,
-          import_status: "completed",
-          import_error: null
-        })
-        .eq("id", word.id)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      await supabase
-        .from("vocabulary_words")
+        .from("vocabulary_books")
         .update({
           import_status: "failed",
+          import_completed_at: new Date().toISOString(),
           import_error: errorMessage
         })
-        .eq("id", word.id)
+        .eq("id", bookId)
+      
+      throw new Error(errorMessage)
     }
+  }
+
+  // All words retried successfully - update book status
+  if (successCount === failedWords.length) {
+    // Check if all words in the book are now completed
+    const { count: completedCount } = await supabase
+      .from("vocabulary_words")
+      .select("*", { count: "exact", head: true })
+      .eq("book_id", bookId)
+      .eq("import_status", "completed")
+
+    const { count: totalCount } = await supabase
+      .from("vocabulary_words")
+      .select("*", { count: "exact", head: true })
+      .eq("book_id", bookId)
+
+    // Update book progress and status
+    await supabase
+      .from("vocabulary_books")
+      .update({
+        import_status: completedCount === totalCount ? "completed" : "importing",
+        import_progress: completedCount || 0,
+        import_completed_at: completedCount === totalCount ? new Date().toISOString() : null,
+        import_error: null
+      })
+      .eq("id", bookId)
   }
 }
 

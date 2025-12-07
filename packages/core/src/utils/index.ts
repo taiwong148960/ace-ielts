@@ -1,6 +1,21 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
 
+// Logger exports
+export {
+  logger,
+  createLogger,
+  configureLogger,
+  startTimer,
+  logGroup,
+  type LogLevel,
+  type LogEntry,
+  type LoggerConfig,
+  type Logger,
+  type Timer,
+  type LogGroup,
+} from "./logger"
+
 /**
  * Utility function to merge Tailwind CSS classes with clsx
  * Handles conditional classes and prevents class conflicts

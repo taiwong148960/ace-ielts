@@ -25,6 +25,17 @@ You are an expert Full-Stack Developer specialized in building the "AceIELTS" IE
 3. **Type Safety:** No `any`. Define explicit interfaces for all props and data.
 4. **Functional Components:** Use React hooks and functional components only.
 
+# Code Quality & Validation Rules
+1. **Review Related Code:** After modifying code, always review related files and dependencies to ensure consistency and identify any necessary updates. This includes:
+   - Checking imports and exports
+   - Verifying type definitions are updated if interfaces changed
+   - Ensuring related services, hooks, or components are updated accordingly
+   - Checking for breaking changes in shared utilities or types
+2. **Run Type Checking & Linting:** After every code modification, you MUST run:
+   - `pnpm typecheck` - to verify TypeScript type safety across all packages
+   - `pnpm lint` - to ensure code follows ESLint rules and project standards
+   - Fix any errors or warnings before considering the task complete
+
 # Data Fetching & State Management Architecture
 
 ## 1. Three-Layer Architecture (Strict Separation)
@@ -85,6 +96,137 @@ You must strictly follow this 3-layer pattern for data operations. **DO NOT** ma
 ## 5. Internationalization
 - All user-facing text MUST be wrapped in `t()` from `useTranslation`.
 - Example: `<span>{t('welcome_message')}</span>` NOT `<span>Welcome</span>`.
+
+# Logging & Observability
+
+## 1. Logging Architecture
+Use the centralized logging utility from `@ace-ielts/core` for all logging needs. **DO NOT** use raw `console.log`, `console.error`, etc. directly.
+
+### Logger Import
+```typescript
+import { createLogger, startTimer, logGroup } from "@ace-ielts/core"
+
+// Create a context-aware logger for each module/service
+const logger = createLogger("ServiceName")
+```
+
+## 2. Log Levels & When to Use Them
+
+| Level | Purpose | Example |
+|-------|---------|---------|
+| `debug` | Detailed debugging info, development only | Variable values, execution flow |
+| `info` | Normal operations, state changes | "User logged in", "Book created" |
+| `warn` | Recoverable issues, degraded functionality | "Retry attempt 2/3", "Fallback used" |
+| `error` | Failures requiring attention | API errors, database failures |
+
+### Log Level Rules
+- **Production:** Only `info`, `warn`, `error` are output by default
+- **Development:** All levels including `debug` are output
+- Use `warn` for recoverable errors, `error` for unrecoverable ones
+- Never log sensitive data (API keys, passwords, PII)
+
+## 3. Logging Patterns
+
+### Service Layer Logging
+```typescript
+const logger = createLogger("VocabularyService")
+
+export async function createBook(data: CreateBookInput): Promise<Book> {
+  logger.info("Creating vocabulary book", { userId: data.userId, bookName: data.name })
+  
+  const { data: book, error } = await supabase.from("vocabulary_books").insert(data)
+  
+  if (error) {
+    logger.error("Failed to create book", { userId: data.userId }, error)
+    throw new Error("Failed to create vocabulary book")
+  }
+  
+  logger.info("Book created successfully", { bookId: book.id })
+  return book
+}
+```
+
+### Performance Timing
+```typescript
+import { startTimer } from "@ace-ielts/core"
+
+export async function fetchBooks(): Promise<Book[]> {
+  const timer = startTimer("VocabularyService", "fetchBooks")
+  
+  try {
+    const books = await supabase.from("vocabulary_books").select("*")
+    timer.end({ bookCount: books.length })
+    return books
+  } catch (error) {
+    timer.endWithError(error as Error)
+    throw error
+  }
+}
+```
+
+### Grouped Operations (Batch/Import)
+```typescript
+import { logGroup } from "@ace-ielts/core"
+
+export async function importWords(words: Word[]): Promise<void> {
+  const group = logGroup("ImportService", "Batch word import")
+  group.info("Starting import", { wordCount: words.length })
+  
+  for (const word of words) {
+    // Process each word...
+    group.debug("Processing word", { word: word.word })
+  }
+  
+  group.info("Import completed", { successCount: words.length })
+  group.end()
+}
+```
+
+## 4. Structured Data Guidelines
+
+### Always Include Context
+```typescript
+// ✅ Good - includes relevant identifiers
+logger.info("Book deleted", { bookId, userId })
+
+// ❌ Bad - missing context
+logger.info("Book deleted")
+```
+
+### Use Consistent Key Names
+| Key | Description |
+|-----|-------------|
+| `userId` | User identifier |
+| `bookId` | Vocabulary book ID |
+| `wordId` | Vocabulary word ID |
+| `durationMs` | Operation duration in milliseconds |
+| `count`, `*Count` | Item counts (e.g., `wordCount`, `errorCount`) |
+| `attempt`, `maxAttempts` | Retry tracking |
+
+### Error Logging Format
+```typescript
+// Always pass error as the third argument
+logger.error("Operation failed", { bookId, userId }, error)
+logger.warn("Retrying operation", { attempt: 2, maxAttempts: 3 }, error)
+```
+
+## 5. What NOT to Log
+- ❌ API keys, tokens, or secrets
+- ❌ User passwords or sensitive credentials
+- ❌ Full request/response bodies with PII
+- ❌ High-frequency events in production (use debug level)
+- ❌ Redundant success logs for every minor operation
+
+## 6. Hook Layer Logging
+Hooks typically don't need logging - let services handle it. Exception: complex state management or debugging.
+
+```typescript
+// Only log significant hook state changes if needed
+const logger = createLogger("useVocabularyImport")
+
+// Log only for debugging complex async flows
+logger.debug("Import state changed", { status, progress })
+```
 
 # Language
 - All code, documentation, and comments must be in English.
