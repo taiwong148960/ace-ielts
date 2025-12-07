@@ -51,7 +51,10 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
 }
 
 // Check if running in development mode
-const isDev = typeof import.meta !== "undefined" && import.meta.env?.DEV
+// In Vite, import.meta.env.DEV is available, but we also check MODE as fallback
+const isDev =
+  typeof import.meta !== "undefined" &&
+  (import.meta.env?.DEV === true || import.meta.env?.MODE === "development")
 
 // Default configuration
 const defaultConfig: LoggerConfig = {
@@ -68,6 +71,23 @@ let globalConfig: LoggerConfig = { ...defaultConfig }
  */
 export function configureLogger(config: Partial<LoggerConfig>): void {
   globalConfig = { ...globalConfig, ...config }
+  
+  // In development, log the configuration change
+  if (isDev) {
+    // eslint-disable-next-line no-console
+    console.log(
+      "%c[Logger] Configuration updated",
+      "color: #3B82F6; font-weight: bold",
+      globalConfig
+    )
+  }
+}
+
+/**
+ * Get current logger configuration (for debugging)
+ */
+export function getLoggerConfig(): Readonly<LoggerConfig> {
+  return { ...globalConfig }
 }
 
 /**
@@ -158,7 +178,9 @@ function log(
   data?: Record<string, unknown>,
   error?: Error
 ): void {
-  if (!shouldLog(level)) return
+  if (!shouldLog(level)) {
+    return
+  }
 
   const entry: LogEntry = {
     level,

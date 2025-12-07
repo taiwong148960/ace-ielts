@@ -42,12 +42,45 @@ You are an expert Full-Stack Developer specialized in building the "AceIELTS" IE
 You must strictly follow this 3-layer pattern for data operations. **DO NOT** make Supabase calls directly inside UI components.
 
 ### Layer 1: API Service Layer (`src/services` or `src/api`)
-- **Responsibility:** Handle direct communication with Supabase.
+- **Responsibility:** Handle communication with backend (Supabase Edge Functions) or direct Supabase access for simple operations.
 - **Rules:**
   - Pure TypeScript/JavaScript functions (no React hooks).
-  - Handle Supabase `data` and `error` unpacking here.
+  - **Primary Pattern:** Call Supabase Edge Functions via `supabase.functions.invoke()` for all backend operations.
+  - **Direct Supabase Access (Exceptions Only):**
+    - Authentication operations (sign in, sign out, session management)
+    - Simple read queries protected by Row Level Security (RLS)
+    - Real-time subscriptions for UI updates
+  - Handle `data` and `error` unpacking here.
   - Throw errors explicitly so React Query can catch them.
-  - **Naming:** `getUserById`, `updateUserProfile`.
+  - **Naming:** `getUserById`, `updateUserProfile`, `createBook` (calls Edge Function).
+- **Edge Function Call Pattern:**
+```typescript
+// ✅ Good: Call Edge Function for backend operations
+export async function createBook(data: CreateBookInput): Promise<Book> {
+  const supabase = getSupabase()
+  const { data: result, error } = await supabase.functions.invoke('vocabulary-create-book', {
+    body: data
+  })
+  if (error) throw new Error(`Failed to create book: ${error.message}`)
+  return result
+}
+
+// ✅ Good: Direct Supabase for simple RLS-protected reads
+export async function getBooks(userId: string): Promise<Book[]> {
+  const supabase = getSupabase()
+  const { data, error } = await supabase
+    .from('vocabulary_books')
+    .select('*')
+    .eq('user_id', userId)
+  if (error) throw error
+  return data
+}
+
+// ❌ Bad: Direct Supabase for complex operations (should use Edge Function)
+export async function importWords(bookId: string, words: Word[]): Promise<void> {
+  // Complex logic should be in Edge Function, not frontend service
+}
+```
 
 ### Layer 2: Custom Hooks Layer (`src/hooks`)
 - **Responsibility:** Bridge API calls with React Query state management.

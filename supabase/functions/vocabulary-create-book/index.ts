@@ -1,0 +1,121 @@
+/**
+ * Supabase Edge Function: Create Vocabulary Book
+ * Creates a new vocabulary book with words and initializes user progress
+ */
+import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
+import { initSupabase } from "../_shared/supabase.ts"
+import { BOOK_COVER_COLORS, type CreateBookInput } from "../_shared/types.ts"
+
+// Declare Deno global
+declare const Deno: {
+  serve: (handler: (req: Request) => Response | Promise<Response>) => void
+  env: {
+    get: (key: string) => string | undefined
+  }
+}
+
+Deno.serve(async (req) => {
+  // Handle CORS
+  const corsResponse = handleCors(req)
+  if (corsResponse) return corsResponse
+
+  try {
+    // Initialize Supabase with auth
+    const { user, supabaseAdmin } = await initSupabase(
+      req.headers.get("Authorization")
+    )
+
+    // Get request body
+    const input: CreateBookInput = await req.json()
+
+    // Validate input
+    if (!input.name || typeof input.name !== "string" || input.name.trim().length === 0) {
+      return errorResponse("Book name is required", 400)
+    }
+
+    if (!input.words || !Array.isArray(input.words)) {
+      return errorResponse("Words array is required", 400)
+    }
+
+    // Filter and clean words
+    const cleanedWords = input.words
+      .map(word => typeof word === "string" ? word.trim() : "")
+      .filter(word => word.length > 0)
+
+    // Create the book
+    const bookData = {
+      name: input.name.trim(),
+      description: input.description?.trim() || null,
+      cover_color: input.cover_color || BOOK_COVER_COLORS[Math.floor(Math.random() * BOOK_COVER_COLORS.length)],
+      cover_text: input.cover_text?.trim() || null,
+      book_type: input.book_type || "custom",
+      is_system_book: false,
+      user_id: user.id,
+      word_count: cleanedWords.length,
+      import_status: null,
+      import_progress: 0,
+      import_total: cleanedWords.length
+    }
+
+    const { data: book, error: bookError } = await supabaseAdmin
+      .from("vocabulary_books")
+      .insert(bookData)
+      .select()
+      .single()
+
+    if (bookError) {
+      console.error("Failed to create book:", bookError)
+      return errorResponse("Failed to create vocabulary book", 500)
+    }
+
+    // Add words to the book
+    if (cleanedWords.length > 0) {
+      const wordsToInsert = cleanedWords.map(word => ({
+        book_id: book.id,
+        word: word
+      }))
+
+      const { error: wordsError } = await supabaseAdmin
+        .from("vocabulary_words")
+        .insert(wordsToInsert)
+
+      if (wordsError) {
+        console.error("Failed to add words:", wordsError)
+        // Don't fail - book was created, just words failed
+      }
+    }
+
+    // Initialize user book progress
+    const { error: progressError } = await supabaseAdmin
+      .from("user_book_progress")
+      .insert({
+        user_id: user.id,
+        book_id: book.id,
+        mastered_count: 0,
+        learning_count: 0,
+        new_count: cleanedWords.length,
+        streak_days: 0,
+        accuracy_percent: 0
+      })
+
+    if (progressError) {
+      console.error("Failed to create progress:", progressError)
+      // Don't fail - book was created
+    }
+
+    return successResponse(book)
+  } catch (error) {
+    console.error("Edge function error:", error)
+    
+    if (error instanceof Error) {
+      if (error.message === "Unauthorized" || error.message === "Missing authorization header") {
+        return errorResponse(error.message, 401)
+      }
+    }
+    
+    return errorResponse(
+      error instanceof Error ? error.message : "Internal server error",
+      500
+    )
+  }
+})

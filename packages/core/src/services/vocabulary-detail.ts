@@ -4,7 +4,7 @@
  */
 
 import { getSupabase, isSupabaseInitialized } from "./supabase"
-import { fsrsScheduler, createInitialWordProgress, stateToMasteryLevel } from "./fsrs"
+import { fsrsScheduler, stateToMasteryLevel } from "./fsrs"
 import type {
   VocabularyBook,
   UserWordProgress,
@@ -13,8 +13,7 @@ import type {
   WordWithProgress,
   TodayLearningSession,
   FSRSRating,
-  FSRSState,
-  ReviewLog
+  FSRSState
 } from "../types/vocabulary"
 import { GRADE_TO_RATING, type SpacedRepetitionGrade } from "../types/vocabulary"
 import { createLogger } from "../utils/logger"
@@ -366,6 +365,7 @@ export async function getDifficultWords(
 
 /**
  * Process a word review and update progress
+ * Calls Edge Function: vocabulary-process-review
  */
 export async function processWordReview(
   userId: string,
@@ -376,206 +376,34 @@ export async function processWordReview(
   if (!isSupabaseInitialized()) return null
 
   const supabase = getSupabase()
-  const rating = GRADE_TO_RATING[grade]
-  const now = new Date()
+  
+  logger.info("Processing word review via Edge Function", { userId, wordId, bookId, grade })
 
-  // Get current progress or create new
-  let { data: progress } = await supabase
-    .from("user_word_progress")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("word_id", wordId)
-    .single()
-
-  const isNew = !progress
-
-  if (!progress) {
-    // Create initial progress
-    const initial = createInitialWordProgress(userId, wordId, bookId)
-    const { data: newProgress, error } = await supabase
-      .from("user_word_progress")
-      .insert(initial)
-      .select()
-      .single()
-
-    if (error) {
-      logger.error("Failed to create word progress", { userId, wordId, bookId }, error)
-      return null
+  const { data, error } = await supabase.functions.invoke('vocabulary-process-review', {
+    body: {
+      wordId,
+      bookId,
+      grade: GRADE_TO_RATING[grade]
     }
-    progress = newProgress
-  }
+  })
 
-  // Calculate new scheduling with FSRS
-  const schedulingResult = fsrsScheduler.review(
-    {
-      state: progress.state as FSRSState,
-      difficulty: progress.difficulty,
-      stability: progress.stability,
-      learning_step: progress.learning_step,
-      is_learning_phase: progress.is_learning_phase,
-      elapsed_days: progress.elapsed_days,
-      reps: progress.reps,
-      lapses: progress.lapses
-    },
-    rating,
-    now
-  )
-
-  // Prepare update
-  const updateData: Partial<UserWordProgress> = {
-    state: schedulingResult.state,
-    difficulty: schedulingResult.difficulty,
-    stability: schedulingResult.stability,
-    retrievability: schedulingResult.retrievability,
-    elapsed_days: schedulingResult.elapsed_days,
-    scheduled_days: schedulingResult.scheduled_days,
-    due_at: schedulingResult.due_at.toISOString(),
-    learning_step: schedulingResult.learning_step,
-    is_learning_phase: schedulingResult.is_learning_phase,
-    last_review_at: now.toISOString(),
-    total_reviews: progress.total_reviews + 1,
-    correct_reviews: rating >= 3 ? progress.correct_reviews + 1 : progress.correct_reviews,
-    reps: rating >= 2 ? progress.reps + 1 : progress.reps,
-    lapses: rating === 1 ? progress.lapses + 1 : progress.lapses,
-    updated_at: now.toISOString()
-  }
-
-  // Update progress
-  const { data: updatedProgress, error: updateError } = await supabase
-    .from("user_word_progress")
-    .update(updateData)
-    .eq("id", progress.id)
-    .select()
-    .single()
-
-  if (updateError) {
-    logger.error("Failed to update word progress", { userId, wordId, bookId }, updateError)
+  if (error) {
+    logger.error("Failed to process review via Edge Function", { userId, wordId, bookId }, error)
     return null
   }
 
-  // Log the review
-  await logReview(userId, wordId, bookId, progress, updatedProgress, rating, now)
-
-  // Update book progress stats
-  await updateBookProgressStats(userId, bookId, isNew)
-
-  return updatedProgress
-}
-
-/**
- * Log a review for analytics
- */
-async function logReview(
-  userId: string,
-  wordId: string,
-  bookId: string,
-  before: UserWordProgress,
-  after: UserWordProgress,
-  rating: FSRSRating,
-  now: Date
-): Promise<void> {
-  if (!isSupabaseInitialized()) return
-
-  const supabase = getSupabase()
-
-  const logEntry: Omit<ReviewLog, 'id' | 'created_at'> = {
-    user_id: userId,
-    word_id: wordId,
-    book_id: bookId,
-    progress_id: after.id,
-    rating,
-    state_before: before.state,
-    state_after: after.state,
-    difficulty_before: before.difficulty,
-    stability_before: before.stability,
-    difficulty_after: after.difficulty,
-    stability_after: after.stability,
-    scheduled_days: after.scheduled_days,
-    elapsed_days: before.elapsed_days,
-    reviewed_at: now.toISOString()
+  if (!data?.success) {
+    logger.error("Review processing failed", { userId, wordId, bookId, error: data?.error })
+    return null
   }
 
-  await supabase.from("review_logs").insert(logEntry)
-}
-
-/**
- * Update book progress statistics after a review
- */
-async function updateBookProgressStats(
-  userId: string,
-  bookId: string,
-  isNewWord: boolean
-): Promise<void> {
-  if (!isSupabaseInitialized()) return
-
-  const supabase = getSupabase()
-  const today = new Date().toISOString().split('T')[0]
-
-  // Get current book progress
-  const { data: bookProgress } = await supabase
-    .from("user_book_progress")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("book_id", bookId)
-    .single()
-
-  if (!bookProgress) {
-    // Create book progress if doesn't exist
-    await supabase.from("user_book_progress").insert({
-      user_id: userId,
-      book_id: bookId,
-      mastered_count: 0,
-      learning_count: 0,
-      new_count: 0,
-      streak_days: 1,
-      accuracy_percent: 0,
-      total_reviews: 1,
-      reviews_today: 1,
-      new_words_today: isNewWord ? 1 : 0,
-      last_review_date: today,
-      daily_new_limit: 20,
-      daily_review_limit: 100
-    })
-    return
-  }
-
-  // Check if this is a new day
-  const isNewDay = bookProgress.last_review_date !== today
-  const newStreak = isNewDay
-    ? (isConsecutiveDay(bookProgress.last_review_date, today) ? bookProgress.streak_days + 1 : 1)
-    : bookProgress.streak_days
-
-  // Update counts
-  const updateData: Partial<UserBookProgress> = {
-    total_reviews: bookProgress.total_reviews + 1,
-    reviews_today: isNewDay ? 1 : bookProgress.reviews_today + 1,
-    new_words_today: isNewDay ? (isNewWord ? 1 : 0) : (isNewWord ? bookProgress.new_words_today + 1 : bookProgress.new_words_today),
-    last_review_date: today,
-    last_studied_at: new Date().toISOString(),
-    streak_days: newStreak,
-    updated_at: new Date().toISOString()
-  }
-
-  await supabase
-    .from("user_book_progress")
-    .update(updateData)
-    .eq("id", bookProgress.id)
-}
-
-/**
- * Check if two dates are consecutive
- */
-function isConsecutiveDay(dateStr1: string | null, dateStr2: string): boolean {
-  if (!dateStr1) return false
-  const date1 = new Date(dateStr1)
-  const date2 = new Date(dateStr2)
-  const diffTime = date2.getTime() - date1.getTime()
-  const diffDays = diffTime / (1000 * 60 * 60 * 24)
-  return diffDays === 1
+  logger.info("Word review processed", { userId, wordId, bookId })
+  return data.data
 }
 
 /**
  * Initialize user book progress when starting to learn a book
+ * Calls Edge Function: vocabulary-init-progress
  */
 export async function initializeBookProgress(
   userId: string,
@@ -584,54 +412,25 @@ export async function initializeBookProgress(
   if (!isSupabaseInitialized()) return null
 
   const supabase = getSupabase()
+  
+  logger.info("Initializing book progress via Edge Function", { userId, bookId })
 
-  // Check if already exists
-  const { data: existing } = await supabase
-    .from("user_book_progress")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("book_id", bookId)
-    .single()
-
-  if (existing) return existing
-
-  // Get word count
-  const { data: book } = await supabase
-    .from("vocabulary_books")
-    .select("word_count")
-    .eq("id", bookId)
-    .single()
-
-  const wordCount = book?.word_count || 0
-
-  // Create progress
-  const { data: progress, error } = await supabase
-    .from("user_book_progress")
-    .insert({
-      user_id: userId,
-      book_id: bookId,
-      mastered_count: 0,
-      learning_count: 0,
-      new_count: wordCount,
-      streak_days: 0,
-      accuracy_percent: 0,
-      total_reviews: 0,
-      reviews_today: 0,
-      new_words_today: 0,
-      last_review_date: null,
-      daily_new_limit: 20,
-      daily_review_limit: 100
-    })
-    .select()
-    .single()
+  const { data, error } = await supabase.functions.invoke('vocabulary-init-progress', {
+    body: { bookId }
+  })
 
   if (error) {
-    logger.error("Failed to initialize book progress", { userId, bookId }, error)
+    logger.error("Failed to initialize book progress via Edge Function", { userId, bookId }, error)
+    return null
+  }
+
+  if (!data?.success) {
+    logger.error("Book progress initialization failed", { userId, bookId, error: data?.error })
     return null
   }
   
-  logger.info("Book progress initialized", { userId, bookId, wordCount })
-  return progress
+  logger.info("Book progress initialized", { userId, bookId })
+  return data.data
 }
 
 /**

@@ -19,7 +19,8 @@ import {
   useTranslation,
   useCreateBook,
   BOOK_COVER_COLORS,
-  startImport
+  startImport,
+  useInvalidateVocabularyBooks
 } from "@ace-ielts/core"
 
 import {
@@ -121,6 +122,7 @@ export function CreateBookDialog({
 }: CreateBookDialogProps) {
   const { t } = useTranslation()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { invalidateUser } = useInvalidateVocabularyBooks()
 
   // Form state
   const [name, setName] = useState("")
@@ -147,10 +149,25 @@ export function CreateBookDialog({
       
       // Start import task asynchronously (don't await to avoid blocking UI)
       if (book.id && userId) {
-        startImport(book.id, userId).catch((error) => {
-          console.error("Failed to start import task:", error)
-          // Import will be retryable from the book list page
-        })
+        // Start import and invalidate cache after import status is updated
+        // startImport updates the database immediately, so we invalidate after a short delay
+        startImport(book.id, userId)
+          .then(() => {
+            // Import completed successfully, invalidate to show final status
+            invalidateUser(userId)
+          })
+          .catch((error) => {
+            console.error("Failed to start import task:", error)
+            // Even if import fails, invalidate to show failed status
+            invalidateUser(userId)
+            // Import will be retryable from the book list page
+          })
+        
+        // Invalidate immediately after a short delay to show importing status
+        // This ensures UI updates as soon as startImport updates the database
+        setTimeout(() => {
+          invalidateUser(userId)
+        }, 500)
       }
     },
     onError: (err) => {

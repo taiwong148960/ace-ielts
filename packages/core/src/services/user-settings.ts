@@ -78,8 +78,8 @@ async function createUserSettings(userId: string): Promise<UserSettings> {
 
 /**
  * Update user settings
- * Note: API keys should be encrypted before storage
- * For now, we'll store them encrypted using Supabase RPC functions
+ * Note: API keys are encrypted server-side in Edge Function
+ * Calls Edge Function: user-settings-update
  */
 export async function updateUserSettings(
   userId: string,
@@ -91,70 +91,27 @@ export async function updateUserSettings(
 
   const supabase = getSupabase()
   
-  // Get encryption key from environment (should be set in Supabase)
-  // For self-hosted, users manage their own encryption
-  // In production, use Supabase Vault for better security
-  
-  const updateData: Record<string, unknown> = {}
-  
-  if (input.llm_provider !== undefined) {
-    updateData.llm_provider = input.llm_provider
-  }
-  
-  // If API key is provided, encrypt it
-  // Note: In production, use Supabase Vault or a secure encryption method
-  // For now, we'll store it encrypted using a simple approach
-  // TODO: Implement proper encryption using Supabase Vault
-  if (input.llm_api_key !== undefined) {
-    // For now, we'll use a simple base64 encoding
-    // In production, use proper encryption (Supabase Vault recommended)
-    updateData.llm_api_key_encrypted = btoa(input.llm_api_key) // Temporary: use proper encryption
-  }
+  logger.info("Updating user settings via Edge Function", { userId })
 
-  // Update Gemini model configuration if provided
-  if (input.gemini_model_config !== undefined) {
-    updateData.gemini_model_config = input.gemini_model_config
-  }
-
-  // Check if settings exist
-  const existing = await getUserSettings(userId)
-  
-  if (existing) {
-    // Update existing settings
-    const { data, error } = await supabase
-      .from("user_settings")
-      .update(updateData)
-      .eq("id", existing.id)
-      .select()
-      .single()
-
-    if (error) {
-      logger.error("Failed to update user settings", { userId }, error)
-      throw new Error("Failed to update user settings")
+  const { data, error } = await supabase.functions.invoke('user-settings-update', {
+    body: {
+      llm_provider: input.llm_provider,
+      llm_api_key: input.llm_api_key,
+      gemini_model_config: input.gemini_model_config
     }
-    
-    logger.info("User settings updated", { userId })
-    return data
-  } else {
-    // Create new settings
-    const { data, error } = await supabase
-      .from("user_settings")
-      .insert({
-        user_id: userId,
-        llm_provider: input.llm_provider || "gemini",
-        ...updateData
-      })
-      .select()
-      .single()
+  })
 
-    if (error) {
-      logger.error("Failed to create user settings on update", { userId }, error)
-      throw new Error("Failed to create user settings")
-    }
-    
-    logger.info("User settings created", { userId })
-    return data
+  if (error) {
+    logger.error("Failed to update user settings via Edge Function", { userId }, error)
+    throw new Error(error.message || "Failed to update user settings")
   }
+
+  if (!data?.success) {
+    throw new Error(data?.error || "Failed to update user settings")
+  }
+    
+  logger.info("User settings updated", { userId })
+  return data.data
 }
 
 /**

@@ -6,6 +6,7 @@ export {
   logger,
   createLogger,
   configureLogger,
+  getLoggerConfig,
   startTimer,
   logGroup,
   type LogLevel,

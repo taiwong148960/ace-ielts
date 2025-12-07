@@ -7,13 +7,33 @@ import {
   AuthProvider,
   initializeSupabase,
   QueryClient,
-  QueryClientProvider
+  QueryClientProvider,
+  createLogger,
+  getLoggerConfig
 } from "@ace-ielts/core"
 import "@ace-ielts/core/i18n"
 
 import "./styles/globals.css"
 import { App } from "./App"
 import { webPlatformContext, webLanguageStorageAdapter } from "./adapters"
+
+// Initialize logger for app startup
+const logger = createLogger("App")
+logger.info("Application starting", { 
+  mode: import.meta.env.MODE,
+  isDev: import.meta.env.DEV 
+})
+
+// Log logger configuration in development
+if (import.meta.env.DEV) {
+  const config = getLoggerConfig()
+  // eslint-disable-next-line no-console
+  console.log(
+    "%c[Logger] Current configuration:",
+    "color: #8B5CF6; font-weight: bold",
+    config
+  )
+}
 
 // Configure i18n with web storage
 setLanguageStorageAdapter(webLanguageStorageAdapter)
