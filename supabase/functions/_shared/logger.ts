@@ -38,13 +38,15 @@ function formatLog(
   service: string,
   message: string,
   context?: LogContext,
-  error?: Error
+  error?: Error,
+  location?: CallerInfo
 ): string {
   const entry: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
     level,
     service,
-    message
+    message,
+    location
   }
 
   if (context && Object.keys(context).length > 0) {
@@ -62,6 +64,49 @@ function formatLog(
   return JSON.stringify(entry)
 }
 
+interface CallerInfo {
+  file?: string
+  function?: string
+  line?: number
+  column?: number
+}
+
+/**
+ * Attempt to extract caller location from the stack trace.
+ * The stack format is V8-like in Deno: "at func (file:line:column)".
+ * We skip the first few frames to reach the user callsite.
+ */
+function getCallerInfo(stack?: string): CallerInfo | undefined {
+  if (!stack) return undefined
+  const lines = stack.split("\n").map((line) => line.trim())
+  // Frame 0 is "Error", frame 1 is getCallerInfo, frame 2 is logger method, frame 3 is the caller
+  const target = lines[3] || lines[2]
+  if (!target) return undefined
+
+  const withFunction = target.match(/^at (.+) \((.+):(\d+):(\d+)\)$/)
+  if (withFunction) {
+    const [, fn, file, line, column] = withFunction
+    return {
+      function: fn,
+      file,
+      line: Number(line),
+      column: Number(column)
+    }
+  }
+
+  const withoutFunction = target.match(/^at (.+):(\d+):(\d+)$/)
+  if (withoutFunction) {
+    const [, file, line, column] = withoutFunction
+    return {
+      file,
+      line: Number(line),
+      column: Number(column)
+    }
+  }
+
+  return undefined
+}
+
 /**
  * Create a logger instance for a specific service/function
  */
@@ -77,25 +122,29 @@ export function createLogger(service: string): Logger {
   return {
     debug(message: string, context?: LogContext): void {
       if (shouldLog("debug")) {
-        console.log(formatLog("debug", service, message, context))
+        const location = getCallerInfo(new Error().stack)
+        console.log(formatLog("debug", service, message, context, undefined, location))
       }
     },
 
     info(message: string, context?: LogContext): void {
       if (shouldLog("info")) {
-        console.log(formatLog("info", service, message, context))
+        const location = getCallerInfo(new Error().stack)
+        console.log(formatLog("info", service, message, context, undefined, location))
       }
     },
 
     warn(message: string, context?: LogContext, error?: Error): void {
       if (shouldLog("warn")) {
-        console.warn(formatLog("warn", service, message, context, error))
+        const location = getCallerInfo(new Error().stack)
+        console.warn(formatLog("warn", service, message, context, error, location))
       }
     },
 
     error(message: string, context?: LogContext, error?: Error): void {
       if (shouldLog("error")) {
-        console.error(formatLog("error", service, message, context, error))
+        const location = getCallerInfo(new Error().stack)
+        console.error(formatLog("error", service, message, context, error, location))
       }
     }
   }

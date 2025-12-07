@@ -1,0 +1,3 @@
+-- Seed file for initial data
+-- This file is intentionally empty for now
+-- Add seed data here if needed
