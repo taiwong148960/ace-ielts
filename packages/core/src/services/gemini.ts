@@ -1,11 +1,20 @@
 /**
  * Gemini API Service
- * Handles word enrichment using Google Gemini API
- * Also handles audio generation using Google Cloud Text-to-Speech API
+ * Handles word enrichment using Google Gemini API via @google/genai SDK
+ * Also handles audio generation using Gemini TTS models
  */
 
-import type { WordDetailData, AudioConfig, ExampleAudioData } from "../types/vocabulary"
-import { DEFAULT_AUDIO_CONFIG } from "../types/vocabulary"
+import { GoogleGenAI } from "@google/genai"
+import type { 
+  WordDetailData, 
+  ExampleAudioData,
+  GeminiTextModelConfig,
+  GeminiTTSModelConfig
+} from "../types/vocabulary"
+import {
+  DEFAULT_GEMINI_TEXT_MODEL_CONFIG,
+  DEFAULT_GEMINI_TTS_MODEL_CONFIG
+} from "../types/vocabulary"
 import { createLogger } from "../utils/logger"
 
 // Create logger for this service
@@ -14,21 +23,11 @@ const logger = createLogger("GeminiService")
 /**
  * Gemini API configuration
  */
-interface GeminiConfig {
+export interface GeminiConfig {
   apiKey: string
-  model?: string
-  baseUrl?: string
+  textModelConfig?: Partial<GeminiTextModelConfig>
+  ttsModelConfig?: Partial<GeminiTTSModelConfig>
 }
-
-/**
- * Default Gemini model
- */
-const DEFAULT_MODEL = "gemini-1.5-pro"
-
-/**
- * Default Gemini API base URL
- */
-const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 /**
  * Enrich a word using Gemini API
@@ -39,14 +38,17 @@ export async function enrichWord(
   config: GeminiConfig
 ): Promise<WordDetailData> {
   const apiKey = config.apiKey
-  const model = config.model || DEFAULT_MODEL
-  const baseUrl = config.baseUrl || DEFAULT_BASE_URL
+  const modelConfig = {
+    ...DEFAULT_GEMINI_TEXT_MODEL_CONFIG,
+    ...config.textModelConfig
+  }
 
   if (!apiKey) {
     throw new Error("Gemini API key is required")
   }
 
-  const url = `${baseUrl}/models/${model}:generateContent?key=${apiKey}`
+  // Initialize GoogleGenAI client
+  const ai = new GoogleGenAI({ apiKey })
 
   // Construct the prompt for structured JSON output
   const prompt = `You are an expert English vocabulary teacher specializing in IELTS preparation. 
@@ -103,54 +105,25 @@ Word to analyze: "${word}"
 Return ONLY valid JSON, no markdown formatting, no code blocks.`
 
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: prompt
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 2048,
-          responseMimeType: "application/json"
-        }
-      })
+    logger.info("Enriching word with Gemini", { 
+      word, 
+      model: modelConfig.model 
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      logger.error("Gemini API request failed", {
-        word,
-        status: response.status,
-        statusText: response.statusText,
-        errorBody: errorText.substring(0, 200) // Truncate for logging
-      })
-      
-      if (response.status === 401 || response.status === 403) {
-        throw new Error("Invalid API key. Please check your Gemini API key.")
+    const response = await ai.models.generateContent({
+      model: modelConfig.model,
+      contents: prompt,
+      config: {
+        temperature: modelConfig.temperature,
+        topK: modelConfig.topK,
+        topP: modelConfig.topP,
+        maxOutputTokens: modelConfig.maxOutputTokens,
+        responseMimeType: "application/json"
       }
-      if (response.status === 429) {
-        throw new Error("API rate limit exceeded. Please try again later.")
-      }
-      
-      throw new Error(`Gemini API error: ${response.status} ${response.statusText}`)
-    }
+    })
 
-    const data = await response.json()
-    
-    // Extract the JSON content from Gemini response
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text
+    // Extract the text content from response
+    const content = response.text
     if (!content) {
       throw new Error("No content returned from Gemini API")
     }
@@ -161,11 +134,11 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
       // Remove any markdown code blocks if present
       const cleanedContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
       wordData = JSON.parse(cleanedContent)
-    } catch {
+    } catch (parseError) {
       logger.error("Failed to parse Gemini response", {
         word,
         responsePreview: content.substring(0, 200) // Truncate for logging
-      })
+      }, parseError instanceof Error ? parseError : new Error(String(parseError)))
       throw new Error("Invalid JSON response from Gemini API")
     }
 
@@ -178,9 +151,20 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
       throw new Error("Invalid response structure: missing example sentences")
     }
 
+    logger.info("Word enriched successfully", { word, definitionCount: wordData.definitions.length })
     return wordData
   } catch (error) {
     if (error instanceof Error) {
+      // Check for specific error types from @google/genai
+      if (error.message.includes("API key") || error.message.includes("401") || error.message.includes("403")) {
+        logger.error("Gemini API authentication failed", { word }, error)
+        throw new Error("Invalid API key. Please check your Gemini API key.")
+      }
+      if (error.message.includes("429") || error.message.includes("rate limit")) {
+        logger.error("Gemini API rate limit exceeded", { word }, error)
+        throw new Error("API rate limit exceeded. Please try again later.")
+      }
+      logger.error("Gemini API request failed", { word }, error)
       throw error
     }
     throw new Error(`Failed to enrich word: ${String(error)}`)
@@ -231,82 +215,82 @@ export async function enrichWordWithRetry(
 }
 
 /**
- * Google Cloud Text-to-Speech API base URL
- */
-const TTS_BASE_URL = "https://texttospeech.googleapis.com/v1"
-
-/**
- * Generate audio for a word or sentence using Google Cloud Text-to-Speech API
- * Returns a data URL (base64 encoded audio) or a public URL if stored
+ * Generate audio for a word or sentence using Gemini TTS models
+ * Returns a data URL (base64 encoded audio)
  */
 export async function generateAudio(
   text: string,
   apiKey: string,
-  config: AudioConfig = DEFAULT_AUDIO_CONFIG
+  ttsModelConfig?: Partial<GeminiTTSModelConfig>
 ): Promise<string> {
   if (!apiKey) {
     throw new Error("API key is required for audio generation")
   }
 
-  const url = `${TTS_BASE_URL}/text:synthesize?key=${apiKey}`
+  const modelConfig = {
+    ...DEFAULT_GEMINI_TTS_MODEL_CONFIG,
+    ...ttsModelConfig
+  }
+
+  // Initialize GoogleGenAI client
+  const ai = new GoogleGenAI({ apiKey })
 
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        input: {
-          text: text
-        },
-        voice: {
-          languageCode: "en-US",
-          name: config.voice,
-          ssmlGender: config.voice.includes("Neural2-A") || 
-                     config.voice.includes("Neural2-B") || 
-                     config.voice.includes("Neural2-E") || 
-                     config.voice.includes("Neural2-F") || 
-                     config.voice.includes("Neural2-G") 
-            ? "FEMALE" : "MALE"
-        },
-        audioConfig: {
-          audioEncoding: "MP3",
-          speakingRate: config.speakingRate || 1.0,
-          pitch: config.pitch || 0.0,
-          volumeGainDb: config.volumeGainDb || 0.0
-        }
-      })
+    logger.info("Generating audio with Gemini TTS", { 
+      textPreview: text.substring(0, 50),
+      model: modelConfig.model 
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      logger.error("TTS API request failed", {
-        textPreview: text.substring(0, 50),
-        status: response.status,
-        statusText: response.statusText
-      })
-      
-      if (response.status === 401 || response.status === 403) {
-        throw new Error("Invalid API key for Text-to-Speech. Please check your Google Cloud API key.")
-      }
-      if (response.status === 429) {
-        throw new Error("TTS API rate limit exceeded. Please try again later.")
-      }
-      
-      throw new Error(`TTS API error: ${response.status} ${response.statusText}`)
+    // Use Gemini TTS model to generate audio
+    const response = await ai.models.generateContent({
+      model: modelConfig.model,
+      contents: text
+    })
+
+    // Extract audio content from response
+    // Gemini TTS returns audio data in inlineData format
+    const candidates = response.candidates
+    if (!candidates || candidates.length === 0) {
+      throw new Error("No candidates returned from Gemini TTS API")
     }
 
-    const data = await response.json()
-    
-    if (!data.audioContent) {
-      throw new Error("No audio content returned from TTS API")
+    const parts = candidates[0].content?.parts
+    if (!parts || parts.length === 0) {
+      throw new Error("No parts returned from Gemini TTS API")
     }
 
-    // Return data URL (base64 encoded MP3)
-    return `data:audio/mp3;base64,${data.audioContent}`
+    // Find the audio part (inlineData)
+    const audioPart = parts.find((part: { inlineData?: { data?: string; mimeType?: string } }) => part.inlineData)
+    if (!audioPart || !audioPart.inlineData) {
+      throw new Error("No audio data found in Gemini TTS response")
+    }
+
+    const audioData = audioPart.inlineData.data
+    const mimeType = audioPart.inlineData.mimeType || "audio/mp3"
+
+    if (!audioData) {
+      throw new Error("No audio content returned from Gemini TTS API")
+    }
+
+    // Return data URL (base64 encoded audio)
+    return `data:${mimeType};base64,${audioData}`
   } catch (error) {
     if (error instanceof Error) {
+      if (error.message.includes("API key") || error.message.includes("401") || error.message.includes("403")) {
+        logger.error("Gemini TTS API authentication failed", {
+          textPreview: text.substring(0, 50)
+        }, error)
+        throw new Error("Invalid API key for Text-to-Speech. Please check your Gemini API key.")
+      }
+      if (error.message.includes("429") || error.message.includes("rate limit")) {
+        logger.error("Gemini TTS API rate limit exceeded", {
+          textPreview: text.substring(0, 50)
+        }, error)
+        throw new Error("TTS API rate limit exceeded. Please try again later.")
+      }
+      logger.error("Gemini TTS API request failed", {
+        textPreview: text.substring(0, 50)
+      }, error)
       throw error
     }
     throw new Error(`Failed to generate audio: ${String(error)}`)
@@ -319,9 +303,9 @@ export async function generateAudio(
 export async function generateWordAudio(
   word: string,
   apiKey: string,
-  config?: AudioConfig
+  ttsModelConfig?: Partial<GeminiTTSModelConfig>
 ): Promise<string> {
-  return generateAudio(word, apiKey, config)
+  return generateAudio(word, apiKey, ttsModelConfig)
 }
 
 /**
@@ -331,11 +315,11 @@ export async function generateWordAudio(
 export async function generateExampleAudios(
   sentences: string[],
   apiKey: string,
-  config?: AudioConfig
+  ttsModelConfig?: Partial<GeminiTTSModelConfig>
 ): Promise<ExampleAudioData[]> {
   const audioPromises = sentences.map(async (sentence) => {
     try {
-      const audioUrl = await generateAudio(sentence, apiKey, config)
+      const audioUrl = await generateAudio(sentence, apiKey, ttsModelConfig)
       return {
         sentence,
         audio_url: audioUrl
@@ -354,4 +338,3 @@ export async function generateExampleAudios(
 
   return Promise.all(audioPromises)
 }
-

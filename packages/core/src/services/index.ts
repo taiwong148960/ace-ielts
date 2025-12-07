@@ -68,7 +68,11 @@ export {
 // Gemini API
 export {
   enrichWord,
-  enrichWordWithRetry
+  enrichWordWithRetry,
+  generateAudio,
+  generateWordAudio,
+  generateExampleAudios,
+  type GeminiConfig
 } from "./gemini"
 
 // User Settings

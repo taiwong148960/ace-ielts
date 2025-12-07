@@ -7,10 +7,9 @@ import { getSupabase, isSupabaseInitialized } from "./supabase"
 import { enrichWordWithRetry, generateWordAudio, generateExampleAudios } from "./gemini"
 import { getLLMApiKey } from "./user-settings"
 import { isSaaSMode, getEnvironmentUrls } from "../config/deployment"
-import type { WordDetailData, ImportStatus, ImportProgress, AudioConfig, ExampleAudioData } from "../types/vocabulary"
-import { DEFAULT_AUDIO_CONFIG } from "../types/vocabulary"
+import type { WordDetailData, ImportStatus, ImportProgress, ExampleAudioData } from "../types/vocabulary"
 import { getBookWords } from "./vocabulary"
-import { createLogger, startTimer } from "../utils/logger"
+import { createLogger } from "../utils/logger"
 
 // Create logger for this service
 const logger = createLogger("VocabularyImportService")
@@ -89,16 +88,14 @@ async function importWordWithRetry(
         })
 
         // Generate audio for word and example sentences (self-hosted mode)
-        const audioConfig: AudioConfig = DEFAULT_AUDIO_CONFIG
-
         try {
-          // Generate word pronunciation audio
-          wordAudioUrl = await generateWordAudio(word.word, apiKey!, audioConfig)
+          // Generate word pronunciation audio using Gemini TTS
+          wordAudioUrl = await generateWordAudio(word.word, apiKey!)
 
           // Generate audio for example sentences
           if (enrichedWordData.exampleSentences && enrichedWordData.exampleSentences.length > 0) {
             const exampleSentences = enrichedWordData.exampleSentences.map(ex => ex.sentence)
-            exampleAudioUrls = await generateExampleAudios(exampleSentences, apiKey!, audioConfig)
+            exampleAudioUrls = await generateExampleAudios(exampleSentences, apiKey!)
           }
         } catch (audioError) {
           // Don't fail the entire import if audio generation fails

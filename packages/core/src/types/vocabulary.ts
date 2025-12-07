@@ -465,3 +465,56 @@ export const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   pitch: 0.0,
   volumeGainDb: 0.0
 }
+
+/**
+ * Supported Gemini text models
+ */
+export type GeminiTextModel = 
+  | "gemini-3-pro-preview"
+  | "gemini-2.5-flash"
+  | "gemini-2.5-flash-lite"
+  | "gemini-2.5-pro"
+
+/**
+ * Supported Gemini TTS (Text-to-Speech) models
+ */
+export type GeminiTTSModel = 
+  | "gemini-2.5-pro-preview-tts"
+  | "gemini-2.5-flash-preview-tts"
+
+/**
+ * Gemini text model generation configuration
+ */
+export interface GeminiTextModelConfig {
+  model: GeminiTextModel
+  temperature?: number // 0.0 to 2.0, default 0.7
+  topK?: number // 1 to 40, default 40
+  topP?: number // 0.0 to 1.0, default 0.95
+  maxOutputTokens?: number // 1 to 8192, default 2048
+}
+
+/**
+ * Gemini TTS model configuration
+ */
+export interface GeminiTTSModelConfig {
+  model: GeminiTTSModel
+  // Additional TTS parameters can be added here
+}
+
+/**
+ * Default Gemini text model configuration
+ */
+export const DEFAULT_GEMINI_TEXT_MODEL_CONFIG: GeminiTextModelConfig = {
+  model: "gemini-3-pro-preview",
+  temperature: 0.7,
+  topK: 40,
+  topP: 0.95,
+  maxOutputTokens: 2048
+}
+
+/**
+ * Default Gemini TTS model configuration
+ */
+export const DEFAULT_GEMINI_TTS_MODEL_CONFIG: GeminiTTSModelConfig = {
+  model: "gemini-2.5-flash-preview-tts"
+}

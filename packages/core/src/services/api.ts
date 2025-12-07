@@ -19,7 +19,7 @@ import type {
 import { isSupabaseInitialized, getSupabase } from "./supabase"
 import { getCurrentUser } from "./auth"
 import { userToProfile } from "../types/auth"
-import { createLogger, startTimer } from "../utils/logger"
+import { createLogger } from "../utils/logger"
 
 // Create logger for this service
 const logger = createLogger("DashboardApiService")

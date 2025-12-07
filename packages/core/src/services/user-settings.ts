@@ -111,6 +111,11 @@ export async function updateUserSettings(
     updateData.llm_api_key_encrypted = btoa(input.llm_api_key) // Temporary: use proper encryption
   }
 
+  // Update Gemini model configuration if provided
+  if (input.gemini_model_config !== undefined) {
+    updateData.gemini_model_config = input.gemini_model_config
+  }
+
   // Check if settings exist
   const existing = await getUserSettings(userId)
   

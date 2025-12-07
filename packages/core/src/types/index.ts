@@ -41,7 +41,11 @@ export type {
   LearningMode,
   ImportStatus,
   ImportProgress,
-  WordDetailData
+  WordDetailData,
+  GeminiTextModel,
+  GeminiTTSModel,
+  GeminiTextModelConfig,
+  GeminiTTSModelConfig
 } from "./vocabulary"
 export {
   BOOK_COVER_COLORS,
@@ -50,7 +54,9 @@ export {
   DEFAULT_FSRS_PARAMS,
   LEARNING_STEPS,
   LEARNING_GRADUATION_STEPS,
-  DEFAULT_BOOK_SETTINGS
+  DEFAULT_BOOK_SETTINGS,
+  DEFAULT_GEMINI_TEXT_MODEL_CONFIG,
+  DEFAULT_GEMINI_TTS_MODEL_CONFIG
 } from "./vocabulary"
 
 /**
@@ -165,6 +171,7 @@ export interface DashboardData {
 // User Settings types
 export type {
   LLMProvider,
+  GeminiModelConfig,
   UserSettings,
   UpdateUserSettingsInput
 } from "./user-settings"

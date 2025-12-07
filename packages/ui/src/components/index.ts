@@ -45,6 +45,18 @@ export { Input } from "./input"
 export { Label, type LabelProps } from "./label"
 export { Textarea } from "./textarea"
 export {
+  Select,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator,
+  SelectScrollUpButton,
+  SelectScrollDownButton
+} from "./select"
+export {
   motion,
   fadeInUp,
   fadeIn,

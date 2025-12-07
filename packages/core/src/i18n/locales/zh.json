@@ -366,6 +366,13 @@
     "notAvailableInSaaS": "设置功能在SaaS模式下不可用。请使用自托管模式来配置API密钥。",
     "save": "保存",
     "saving": "保存中...",
+    "saved": "设置保存成功",
+    "llmProvider": {
+      "title": "LLM提供商",
+      "description": "选择您偏好的LLM提供商用于词汇丰富化",
+      "label": "提供商",
+      "hint": "选择要使用的LLM提供商。目前仅完整支持Gemini。"
+    },
     "llmApiKey": {
       "title": "LLM API密钥",
       "description": "配置您的LLM API密钥用于词汇丰富化（仅限自托管模式）",
@@ -376,6 +383,27 @@
       "saved": "API密钥保存成功",
       "show": "显示",
       "hide": "隐藏"
+    },
+    "geminiConfig": {
+      "title": "Gemini模型配置",
+      "description": "配置Gemini文本和TTS模型参数",
+      "textModel": {
+        "title": "文本模型设置",
+        "modelLabel": "模型",
+        "temperature": "温度",
+        "temperatureHint": "控制随机性（0.0 = 确定性，2.0 = 非常随机）。默认值：0.7",
+        "topK": "Top K",
+        "topKHint": "要考虑的token数量（1-40）。默认值：40",
+        "topP": "Top P",
+        "topPHint": "核采样阈值（0.0-1.0）。默认值：0.95",
+        "maxTokens": "最大输出Token数",
+        "maxTokensHint": "生成的最大token数（1-8192）。默认值：2048"
+      },
+      "ttsModel": {
+        "title": "文本转语音模型设置",
+        "modelLabel": "TTS模型",
+        "hint": "选择用于生成发音音频的Gemini TTS模型"
+      }
     },
     "errors": {
       "saveFailed": "保存设置失败，请重试。"

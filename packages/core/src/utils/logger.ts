@@ -126,6 +126,7 @@ function consoleOutput(entry: LogEntry): void {
   }
 
   // Output using appropriate console method
+  // eslint-disable-next-line no-console
   console[style.method](...consoleArgs)
 }
 
@@ -143,6 +144,7 @@ function structuredOutput(entry: LogEntry): void {
         }
       : undefined,
   }
+  // eslint-disable-next-line no-console
   console.log(JSON.stringify(output))
 }
 
@@ -301,6 +303,7 @@ export function logGroup(context: string, groupName: string) {
   const contextLogger = createLogger(context)
 
   if (globalConfig.enableConsole && !globalConfig.enableStructured) {
+    // eslint-disable-next-line no-console
     console.group(`[${context}] ${groupName}`)
   }
 
@@ -311,6 +314,7 @@ export function logGroup(context: string, groupName: string) {
     error: contextLogger.error,
     end(): void {
       if (globalConfig.enableConsole && !globalConfig.enableStructured) {
+        // eslint-disable-next-line no-console
         console.groupEnd()
       }
     },

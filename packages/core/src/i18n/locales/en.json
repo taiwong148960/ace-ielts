@@ -366,6 +366,13 @@
     "notAvailableInSaaS": "Settings are not available in SaaS mode. Please use self-hosted mode to configure API keys.",
     "save": "Save",
     "saving": "Saving...",
+    "saved": "Settings saved successfully",
+    "llmProvider": {
+      "title": "LLM Provider",
+      "description": "Choose your preferred LLM provider for vocabulary enrichment",
+      "label": "Provider",
+      "hint": "Select the LLM provider you want to use. Currently, only Gemini is fully supported."
+    },
     "llmApiKey": {
       "title": "LLM API Key",
       "description": "Configure your LLM API key for vocabulary enrichment (self-hosted mode only)",
@@ -376,6 +383,27 @@
       "saved": "API key saved successfully",
       "show": "Show",
       "hide": "Hide"
+    },
+    "geminiConfig": {
+      "title": "Gemini Model Configuration",
+      "description": "Configure Gemini text and TTS model parameters",
+      "textModel": {
+        "title": "Text Model Settings",
+        "modelLabel": "Model",
+        "temperature": "Temperature",
+        "temperatureHint": "Controls randomness (0.0 = deterministic, 2.0 = very random). Default: 0.7",
+        "topK": "Top K",
+        "topKHint": "Number of tokens to consider (1-40). Default: 40",
+        "topP": "Top P",
+        "topPHint": "Nucleus sampling threshold (0.0-1.0). Default: 0.95",
+        "maxTokens": "Max Output Tokens",
+        "maxTokensHint": "Maximum tokens to generate (1-8192). Default: 2048"
+      },
+      "ttsModel": {
+        "title": "Text-to-Speech Model Settings",
+        "modelLabel": "TTS Model",
+        "hint": "Select the Gemini TTS model for generating pronunciation audio"
+      }
     },
     "errors": {
       "saveFailed": "Failed to save settings. Please try again."
