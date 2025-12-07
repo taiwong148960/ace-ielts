@@ -137,8 +137,8 @@
       "importing": "Importing...",
       "progressText": "{{current}} / {{total}} words processed",
       "failed": "Import Failed",
-      "failedPartial": "{{completed}} succeeded, {{failed}} failed ({{total}} total)",
-      "failedAll": "All {{total}} words failed to import",
+      "failedPartial": "{{completed}} succeeded, {{failed}} failed",
+      "failedAll": "All words failed to import",
       "retry": "Retry",
       "retrying": "Retrying...",
       "badge": "Importing",
@@ -215,7 +215,14 @@
       "estimatedCompletionMonths": "~{{months}} months",
       "estimatedCompletionAtPace": "at current pace",
       "noRecentWords": "No words learned yet",
-      "noDifficultWords": "No difficult words yet"
+      "noDifficultWords": "No difficult words yet",
+      "importStatus": {
+        "importing": "Importing",
+        "importingProgress": "{{current}} / {{total}} words",
+        "completed": "Import completed",
+        "failed": "Import failed",
+        "failedWithError": "Import failed: {{error}}"
+      }
     },
     "settings": {
       "title": "Book Settings",

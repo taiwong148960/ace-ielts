@@ -5,15 +5,15 @@
  * Architecture: This service coordinates between the client and Edge Functions:
  * 1. Client calls startImport() which invokes vocabulary-start-import Edge Function
  * 2. Edge Function returns list of words to process
- * 3. Client processes each word by calling gemini-enrich-word Edge Function
+ * 3. Client processes each word by calling gemini-enrich-word Edge Function (unified for both SaaS and self-hosted modes)
  * 4. Client calls updateImportStatus() for each word result
+ * 
+ * Security: All Gemini API calls are made through Edge Functions to prevent API key exposure.
+ * In self-hosted mode, the Edge Function decrypts the user's API key server-side.
  */
 
 import { getSupabase, isSupabaseInitialized } from "./supabase"
-import { enrichWordWithRetry, generateWordAudio, generateExampleAudios } from "./gemini"
-import { getLLMApiKey } from "./user-settings"
-import { isSaaSMode } from "../config/deployment"
-import type { WordDetailData, ImportStatus, ImportProgress, ExampleAudioData } from "../types/vocabulary"
+import type { WordDetailData, ImportProgress, ExampleAudioData } from "../types/vocabulary"
 import { createLogger } from "../utils/logger"
 
 // Create logger for this service
@@ -27,11 +27,13 @@ const MAX_RETRY_ATTEMPTS = 3
 /**
  * Helper function to import a single word with retry logic
  * Returns true if successful, false if failed after all retries
+ * 
+ * Security: All Gemini API calls are made through Edge Functions to prevent API key exposure.
+ * The Edge Function handles both SaaS mode (platform API key) and self-hosted mode (user API key).
  */
 async function importWordWithRetry(
   word: { id: string; word: string },
   bookId: string,
-  apiKey: string | null,
   supabase: ReturnType<typeof getSupabase>
 ): Promise<{ success: boolean; error: string | null }> {
   let attemptCount = 0
@@ -39,48 +41,31 @@ async function importWordWithRetry(
 
   while (attemptCount < MAX_RETRY_ATTEMPTS) {
     try {
-      let enrichedWordData: WordDetailData
+      // Call Edge Function for both SaaS and self-hosted modes
+      // The Edge Function will:
+      // - In SaaS mode: Use platform-managed API key from environment
+      // - In self-hosted mode: Decrypt and use user's API key from settings
+      const { data, error } = await supabase.functions.invoke('gemini-enrich-word', {
+        body: { word: word.word }
+      })
+
+      if (error) {
+        throw new Error(error.message || "Edge Function error")
+      }
+
+      if (!data) {
+        throw new Error("No data returned from Edge Function")
+      }
+
+      const enrichedWordData = data as WordDetailData
+
+      // Extract audio URLs from Edge Function response
       let wordAudioUrl: string | null = null
       let exampleAudioUrls: ExampleAudioData[] | null = null
-
-      if (isSaaSMode()) {
-        // Call Edge Function for SaaS mode
-        const { data, error } = await supabase.functions.invoke('gemini-enrich-word', {
-          body: { word: word.word }
-        })
-
-        if (error) {
-          throw new Error(error.message || "Edge Function error")
-        }
-
-        enrichedWordData = data
-
-        // Extract audio URLs from Edge Function response
-        if (data._audio) {
-          wordAudioUrl = data._audio.word_audio_url || null
-          exampleAudioUrls = data._audio.example_audio_urls || null
-        }
-      } else {
-        // Use user's API key for self-hosted mode
-        enrichedWordData = await enrichWordWithRetry(word.word, {
-          apiKey: apiKey!
-        })
-
-        // Generate audio for word and example sentences (self-hosted mode)
-        try {
-          wordAudioUrl = await generateWordAudio(word.word, apiKey!)
-
-          if (enrichedWordData.exampleSentences && enrichedWordData.exampleSentences.length > 0) {
-            const exampleSentences = enrichedWordData.exampleSentences.map(ex => ex.sentence)
-            exampleAudioUrls = await generateExampleAudios(exampleSentences, apiKey!)
-          }
-        } catch (audioError) {
-          logger.warn(
-            "Audio generation failed",
-            { wordId: word.id, word: word.word },
-            audioError instanceof Error ? audioError : new Error(String(audioError))
-          )
-        }
+      
+      if (data._audio) {
+        wordAudioUrl = data._audio.word_audio_url || null
+        exampleAudioUrls = data._audio.example_audio_urls || null
       }
 
       // Update import status via Edge Function
@@ -169,31 +154,15 @@ export async function startImport(
   const words = startData.data.words as Array<{ id: string; word: string }>
   logger.info("Import started", { bookId, userId, wordCount: words.length })
 
-  // Get API key for self-hosted mode
-  let apiKey: string | null = null
-  if (!isSaaSMode()) {
-    apiKey = await getLLMApiKey(userId)
-    if (!apiKey) {
-      const errorMsg = "LLM API key not configured. Please set your API key in settings."
-      // Update status via Edge Function
-      await supabase.functions.invoke('vocabulary-update-import-status', {
-        body: {
-          bookId,
-          wordId: words[0]?.id,
-          success: false,
-          error: errorMsg
-        }
-      })
-      throw new Error(errorMsg)
-    }
-  }
-
   // Process each word sequentially
+  // Note: API key handling is done server-side in the Edge Function
+  // This prevents API key exposure in the frontend
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
 
     // Import word with retry logic
-    const result = await importWordWithRetry(word, bookId, apiKey, supabase)
+    // The Edge Function will handle API key retrieval and decryption
+    const result = await importWordWithRetry(word, bookId, supabase)
 
     if (result.success) {
       // Small delay to avoid rate limiting
@@ -218,6 +187,7 @@ export async function startImport(
 
 /**
  * Get import progress for a vocabulary book
+ * Calls Edge Function: vocabulary-get-import-progress
  */
 export async function getImportProgress(bookId: string): Promise<ImportProgress | null> {
   if (!isSupabaseInitialized()) {
@@ -225,28 +195,24 @@ export async function getImportProgress(bookId: string): Promise<ImportProgress 
   }
 
   const supabase = getSupabase()
-  const { data, error } = await supabase
-    .from("vocabulary_books")
-    .select("import_status, import_progress, import_total, import_started_at, import_completed_at, import_error")
-    .eq("id", bookId)
-    .single()
+  
+  logger.debug("Fetching import progress via Edge Function", { bookId })
 
-  if (error || !data) {
+  const { data, error } = await supabase.functions.invoke('vocabulary-get-import-progress', {
+    body: { bookId }
+  })
+
+  if (error || !data?.success) {
+    logger.warn("Failed to get import progress via Edge Function", { bookId }, error)
     return null
   }
 
-  return {
-    status: (data.import_status as ImportStatus | null) || null,
-    current: data.import_progress || 0,
-    total: data.import_total || 0,
-    startedAt: data.import_started_at || undefined,
-    completedAt: data.import_completed_at || undefined,
-    error: data.import_error || undefined
-  }
+  return data.data as ImportProgress
 }
 
 /**
  * Get failed words with error messages for a book
+ * Calls Edge Function: vocabulary-get-failed-words
  */
 export async function getFailedWordsErrors(bookId: string): Promise<Array<{ word: string; error: string }>> {
   if (!isSupabaseInitialized()) {
@@ -254,23 +220,19 @@ export async function getFailedWordsErrors(bookId: string): Promise<Array<{ word
   }
 
   const supabase = getSupabase()
-  const { data, error } = await supabase
-    .from("vocabulary_words")
-    .select("word, import_error")
-    .eq("book_id", bookId)
-    .eq("import_status", "failed")
-    .not("import_error", "is", null)
+  
+  logger.debug("Fetching failed words via Edge Function", { bookId })
 
-  if (error || !data) {
+  const { data, error } = await supabase.functions.invoke('vocabulary-get-failed-words', {
+    body: { bookId }
+  })
+
+  if (error || !data?.success) {
+    logger.warn("Failed to get failed words via Edge Function", { bookId }, error)
     return []
   }
 
-  return data
-    .filter((item) => item.import_error)
-    .map((item) => ({
-      word: item.word,
-      error: item.import_error as string
-    }))
+  return data.data as Array<{ word: string; error: string }>
 }
 
 /**
@@ -312,20 +274,15 @@ export async function retryFailedWords(bookId: string, userId: string): Promise<
 
   logger.info("Retrying failed words", { bookId, failedCount: failedWords.length })
 
-  // Get API key for self-hosted mode
-  let apiKey: string | null = null
-  if (!isSaaSMode()) {
-    apiKey = await getLLMApiKey(userId)
-    if (!apiKey) {
-      throw new Error("LLM API key not configured")
-    }
-  }
-
   // Retry each failed word sequentially
+  // Note: API key handling is done server-side in the Edge Function
+  // This prevents API key exposure in the frontend
   for (let i = 0; i < failedWords.length; i++) {
     const word = failedWords[i]
     
-    const result = await importWordWithRetry(word, bookId, apiKey, supabase)
+    // Retry word with retry logic
+    // The Edge Function will handle API key retrieval and decryption
+    const result = await importWordWithRetry(word, bookId, supabase)
 
     if (result.success) {
       // Small delay to avoid rate limiting

@@ -294,17 +294,22 @@ function VocabularyBookCard({
 
   // Use real-time progress if available, otherwise fall back to book data
   const importProgress = realTimeProgress?.current ?? book.import_progress ?? 0
-  const importTotal = realTimeProgress?.total ?? book.import_total ?? 0
+  let importTotal = realTimeProgress?.total ?? book.import_total ?? 0
   const currentImportStatus = realTimeProgress?.status ?? importStatus
   const importError = realTimeProgress?.error ?? book.import_error ?? null
   
   // Determine current state
   const isCurrentlyImporting = isImporting || currentImportStatus === "importing"
   const isCurrentlyFailed = isFailed || currentImportStatus === "failed"
-  const isBlocked = isCurrentlyImporting || isCurrentlyFailed
+  
+  // For failed status, use word_count as total if it's larger than import_total
+  // This ensures accurate failure count display when import_total doesn't match actual word count
+  if (isCurrentlyFailed && book.word_count && book.word_count > importTotal) {
+    importTotal = book.word_count
+  }
 
   const handleCardClick = () => {
-    if (isBlocked) return
+    // Allow clicking even during import - detail page will show only completed words
     onClick()
   }
 
@@ -319,17 +324,13 @@ function VocabularyBookCard({
         className={cn(
           "group transition-all duration-300 overflow-hidden relative",
           isCurrentlyImporting 
-            ? "cursor-not-allowed ring-2 ring-ai/30 shadow-glow-ai/10" 
+            ? "ring-2 ring-ai/30 shadow-glow-ai/10 cursor-pointer hover:shadow-lg hover:scale-[1.02]" 
             : isCurrentlyFailed
-            ? "cursor-not-allowed ring-2 ring-red-300/50"
+            ? "ring-2 ring-red-300/50 cursor-pointer hover:shadow-lg hover:scale-[1.02]"
             : "cursor-pointer hover:shadow-lg hover:scale-[1.02]"
         )}
         onClick={handleCardClick}
       >
-        {/* Overlay to prevent clicks when importing (not when failed - need to allow retry) */}
-        {isCurrentlyImporting && (
-          <div className="absolute inset-0 z-10 cursor-not-allowed" />
-        )}
 
         {/* Book Cover */}
         <div className={cn("h-24 relative", book.cover_color)}>
@@ -354,7 +355,7 @@ function VocabularyBookCard({
           )}
 
           {/* Settings Button */}
-          {isAuthenticated && onOpenSettings && !isBlocked && (
+          {isAuthenticated && onOpenSettings && (
             <button
               onClick={(e) => onOpenSettings(book.id, e)}
               className="absolute top-2 right-2 p-1.5 rounded-md bg-white/20 hover:bg-white/30 backdrop-blur-sm transition-colors opacity-0 group-hover:opacity-100"
@@ -368,15 +369,10 @@ function VocabularyBookCard({
         <CardContent className="pt-4">
           {/* Book Title */}
           <div className="flex items-start justify-between mb-2">
-            <h3 className={cn(
-              "font-semibold text-text-primary line-clamp-1 transition-colors",
-              !isBlocked && "group-hover:text-primary"
-            )}>
+            <h3 className="font-semibold text-text-primary line-clamp-1 transition-colors group-hover:text-primary">
               {book.name}
             </h3>
-            {!isBlocked && (
-              <ChevronRight className="h-4 w-4 text-text-tertiary group-hover:text-primary group-hover:translate-x-1 transition-all flex-shrink-0 ml-2" />
-            )}
+            <ChevronRight className="h-4 w-4 text-text-tertiary group-hover:text-primary group-hover:translate-x-1 transition-all flex-shrink-0 ml-2" />
           </div>
 
           {/* Description */}
@@ -396,39 +392,29 @@ function VocabularyBookCard({
             />
           )}
 
-          {/* Normal Stats (only show when not blocked) */}
-          {!isBlocked && (
-            <div className="space-y-2">
-              {/* Progress bar */}
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-text-secondary">
-                  {t("vocabulary.wordsCount", { count: book.word_count })}
-                </span>
-                <span className="text-primary font-medium">
-                  {t("vocabulary.progress", { percent: progressPercent })}
-                </span>
-              </div>
-              <Progress value={progressPercent} animated className="h-1.5" />
-
-              {/* Last studied */}
-              <div className="flex items-center gap-1.5 text-xs text-text-tertiary pt-1">
-                <Clock className="h-3 w-3" />
-                <span>
-                  {lastStudied
-                    ? t("vocabulary.lastStudied", { time: lastStudied })
-                    : t("vocabulary.never")}
-                </span>
-              </div>
+          {/* Normal Stats */}
+          <div className="space-y-2">
+            {/* Progress bar */}
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-secondary">
+                {t("vocabulary.wordsCount", { count: book.word_count })}
+              </span>
+              <span className="text-primary font-medium">
+                {t("vocabulary.progress", { percent: progressPercent })}
+              </span>
             </div>
-          )}
+            <Progress value={progressPercent} animated className="h-1.5" />
 
-          {/* Blocked state message */}
-          {isBlocked && (
-            <div className="text-xs text-text-tertiary flex items-center gap-1.5 pt-2">
+            {/* Last studied */}
+            <div className="flex items-center gap-1.5 text-xs text-text-tertiary pt-1">
               <Clock className="h-3 w-3" />
-              <span>{t("vocabulary.import.blockedHint")}</span>
+              <span>
+                {lastStudied
+                  ? t("vocabulary.lastStudied", { time: lastStudied })
+                  : t("vocabulary.never")}
+              </span>
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
     </motion.div>

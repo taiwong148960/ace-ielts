@@ -4,7 +4,7 @@
  */
 
 import { getSupabase, isSupabaseInitialized } from "./supabase"
-import { fsrsScheduler, stateToMasteryLevel } from "./fsrs"
+import { fsrsScheduler } from "./fsrs"
 import type {
   VocabularyBook,
   UserWordProgress,
@@ -13,7 +13,6 @@ import type {
   WordWithProgress,
   TodayLearningSession,
   FSRSRating,
-  FSRSState
 } from "../types/vocabulary"
 import { GRADE_TO_RATING, type SpacedRepetitionGrade } from "../types/vocabulary"
 import { createLogger } from "../utils/logger"
@@ -22,34 +21,8 @@ import { createLogger } from "../utils/logger"
 const logger = createLogger("VocabularyDetailService")
 
 /**
- * Supabase query result type for word progress with joined vocabulary_words
- * Note: vocabulary_words is typed as single object (many-to-one relationship)
- */
-interface WordProgressWithWord {
-  word_id: string
-  state: string
-  stability: number
-  due_at: string | null
-  last_review_at: string | null
-  lapses: number
-  vocabulary_words: {
-    id: string
-    word: string
-    phonetic: string | null
-    definition: string
-  }
-}
-
-/**
- * Helper to cast Supabase query results to WordProgressWithWord[]
- * This is needed because Supabase's type inference doesn't correctly handle !inner joins
- */
-function asWordProgressList(data: unknown[] | null): WordProgressWithWord[] {
-  return (data || []) as WordProgressWithWord[]
-}
-
-/**
  * Get a book with full details for the book detail page
+ * Calls Edge Function: vocabulary-get-book-details
  */
 export async function getBookWithDetails(
   bookId: string,
@@ -65,124 +38,28 @@ export async function getBookWithDetails(
   }
 
   const supabase = getSupabase()
+  
+  logger.debug("Fetching book details via Edge Function", { bookId, userId })
 
-  // Get book
-  const { data: book, error: bookError } = await supabase
-    .from("vocabulary_books")
-    .select("*")
-    .eq("id", bookId)
-    .single()
+  const { data, error } = await supabase.functions.invoke('vocabulary-get-book-details', {
+    body: { bookId }
+  })
 
-  if (bookError || !book) {
-    logger.error("Failed to fetch book details", { bookId, userId }, bookError || new Error("Book not found"))
+  if (error || !data?.success) {
+    logger.error("Failed to fetch book details via Edge Function", { bookId, userId }, error)
     return null
   }
 
-  // Get user progress
-  const { data: progress } = await supabase
-    .from("user_book_progress")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("book_id", bookId)
-    .single()
-
-  // Calculate stats from word progress
-  const stats = await calculateBookStats(bookId, userId, book.word_count)
-
-  return { book, progress, stats }
-}
-
-/**
- * Calculate detailed book statistics
- */
-async function calculateBookStats(
-  bookId: string,
-  userId: string,
-  totalWords: number
-): Promise<BookDetailStats> {
-  if (!isSupabaseInitialized()) {
-    return getDefaultStats(totalWords)
-  }
-
-  const supabase = getSupabase()
-  const now = new Date()
-
-  // Get word progress counts
-  const { data: progressData } = await supabase
-    .from("user_word_progress")
-    .select("state, stability, due_at, is_learning_phase")
-    .eq("user_id", userId)
-    .eq("book_id", bookId)
-
-  if (!progressData || progressData.length === 0) {
-    return getDefaultStats(totalWords)
-  }
-
-  // Count by state
-  let mastered = 0
-  let learning = 0
-  let todayReview = 0
-  let totalStability = 0
-
-  for (const p of progressData) {
-    const mastery = stateToMasteryLevel(p.state as FSRSState, p.stability)
-    if (mastery === "mastered") mastered++
-    else if (mastery === "learning") learning++
-    
-    totalStability += p.stability || 0
-
-    // Count due for review
-    if (p.due_at && new Date(p.due_at) <= now) {
-      todayReview++
-    }
-  }
-
-  const newWords = totalWords - progressData.length
-  const averageStability = progressData.length > 0 ? totalStability / progressData.length : 0
-
-  // Get book progress for accuracy and streak
-  const { data: bookProgress } = await supabase
-    .from("user_book_progress")
-    .select("accuracy_percent, streak_days, daily_new_limit")
-    .eq("user_id", userId)
-    .eq("book_id", bookId)
-    .single()
-
-  const dailyNewLimit = bookProgress?.daily_new_limit || 20
-  const todayNew = Math.min(dailyNewLimit, newWords)
-  const estimatedMinutes = Math.ceil((todayReview + todayNew) * 0.5) // ~30 seconds per word
-
-  return {
-    totalWords,
-    mastered,
-    learning,
-    newWords,
-    todayReview,
-    todayNew,
-    estimatedMinutes,
-    streak: bookProgress?.streak_days || 0,
-    accuracy: bookProgress?.accuracy_percent || 0,
-    averageStability
-  }
-}
-
-function getDefaultStats(totalWords: number): BookDetailStats {
-  return {
-    totalWords,
-    mastered: 0,
-    learning: 0,
-    newWords: totalWords,
-    todayReview: 0,
-    todayNew: Math.min(20, totalWords),
-    estimatedMinutes: Math.min(10, totalWords),
-    streak: 0,
-    accuracy: 0,
-    averageStability: 0
+  return data.data as {
+    book: VocabularyBook
+    progress: UserBookProgress | null
+    stats: BookDetailStats
   }
 }
 
 /**
  * Get today's learning session (words to review + new words)
+ * Calls Edge Function: vocabulary-get-learning-session
  */
 export async function getTodayLearningSession(
   bookId: string,
@@ -195,81 +72,24 @@ export async function getTodayLearningSession(
   }
 
   const supabase = getSupabase()
-  const now = new Date()
+  
+  logger.debug("Fetching learning session via Edge Function", { bookId, userId, newLimit, reviewLimit })
 
-  // Get words due for review
-  const { data: dueProgress } = await supabase
-    .from("user_word_progress")
-    .select(`
-      id,
-      word_id,
-      state,
-      stability,
-      due_at,
-      last_review_at,
-      lapses,
-      vocabulary_words!inner (
-        id,
-        word,
-        phonetic,
-        definition
-      )
-    `)
-    .eq("user_id", userId)
-    .eq("book_id", bookId)
-    .lte("due_at", now.toISOString())
-    .order("due_at")
-    .limit(reviewLimit)
+  const { data, error } = await supabase.functions.invoke('vocabulary-get-learning-session', {
+    body: { bookId, newLimit, reviewLimit }
+  })
 
-  const reviewWords: WordWithProgress[] = asWordProgressList(dueProgress).map((p) => ({
-    id: p.word_id,
-    word: p.vocabulary_words.word,
-    phonetic: p.vocabulary_words.phonetic,
-    definition: p.vocabulary_words.definition,
-    state: p.state as FSRSState,
-    stability: p.stability,
-    due_at: p.due_at,
-    last_review_at: p.last_review_at,
-    lapses: p.lapses
-  }))
+  if (error || !data?.success) {
+    logger.warn("Failed to get learning session via Edge Function", { bookId, userId }, error)
+    return { reviewWords: [], newWords: [], totalCount: 0, estimatedMinutes: 0 }
+  }
 
-  // Get new words (words without progress)
-  const { data: allWords } = await supabase
-    .from("vocabulary_words")
-    .select("id, word, phonetic, definition")
-    .eq("book_id", bookId)
-
-  const { data: existingProgress } = await supabase
-    .from("user_word_progress")
-    .select("word_id")
-    .eq("user_id", userId)
-    .eq("book_id", bookId)
-
-  const existingWordIds = new Set((existingProgress || []).map(p => p.word_id))
-  const newWordsData = (allWords || [])
-    .filter(w => !existingWordIds.has(w.id))
-    .slice(0, newLimit)
-
-  const newWords: WordWithProgress[] = newWordsData.map(w => ({
-    id: w.id,
-    word: w.word,
-    phonetic: w.phonetic,
-    definition: w.definition,
-    state: "new" as FSRSState,
-    stability: 0,
-    due_at: null,
-    last_review_at: null,
-    lapses: 0
-  }))
-
-  const totalCount = reviewWords.length + newWords.length
-  const estimatedMinutes = Math.ceil(totalCount * 0.5)
-
-  return { reviewWords, newWords, totalCount, estimatedMinutes }
+  return data.data as TodayLearningSession
 }
 
 /**
  * Get recently learned words
+ * Calls Edge Function: vocabulary-get-recent-words
  */
 export async function getRecentWords(
   bookId: string,
@@ -279,44 +99,24 @@ export async function getRecentWords(
   if (!isSupabaseInitialized()) return []
 
   const supabase = getSupabase()
+  
+  logger.debug("Fetching recent words via Edge Function", { bookId, userId, limit })
 
-  const { data } = await supabase
-    .from("user_word_progress")
-    .select(`
-      word_id,
-      state,
-      stability,
-      due_at,
-      last_review_at,
-      lapses,
-      vocabulary_words!inner (
-        id,
-        word,
-        phonetic,
-        definition
-      )
-    `)
-    .eq("user_id", userId)
-    .eq("book_id", bookId)
-    .not("last_review_at", "is", null)
-    .order("last_review_at", { ascending: false })
-    .limit(limit)
+  const { data, error } = await supabase.functions.invoke('vocabulary-get-recent-words', {
+    body: { bookId, limit }
+  })
 
-  return asWordProgressList(data).map((p) => ({
-    id: p.word_id,
-    word: p.vocabulary_words.word,
-    phonetic: p.vocabulary_words.phonetic,
-    definition: p.vocabulary_words.definition,
-    state: p.state as FSRSState,
-    stability: p.stability,
-    due_at: p.due_at,
-    last_review_at: p.last_review_at,
-    lapses: p.lapses
-  }))
+  if (error || !data?.success) {
+    logger.warn("Failed to get recent words via Edge Function", { bookId, userId }, error)
+    return []
+  }
+
+  return data.data as WordWithProgress[]
 }
 
 /**
  * Get difficult words (high lapse count or low stability)
+ * Calls Edge Function: vocabulary-get-difficult-words
  */
 export async function getDifficultWords(
   bookId: string,
@@ -326,41 +126,19 @@ export async function getDifficultWords(
   if (!isSupabaseInitialized()) return []
 
   const supabase = getSupabase()
+  
+  logger.debug("Fetching difficult words via Edge Function", { bookId, userId, limit })
 
-  const { data } = await supabase
-    .from("user_word_progress")
-    .select(`
-      word_id,
-      state,
-      stability,
-      due_at,
-      last_review_at,
-      lapses,
-      vocabulary_words!inner (
-        id,
-        word,
-        phonetic,
-        definition
-      )
-    `)
-    .eq("user_id", userId)
-    .eq("book_id", bookId)
-    .gt("lapses", 0)
-    .order("lapses", { ascending: false })
-    .order("stability", { ascending: true })
-    .limit(limit)
+  const { data, error } = await supabase.functions.invoke('vocabulary-get-difficult-words', {
+    body: { bookId, limit }
+  })
 
-  return asWordProgressList(data).map((p) => ({
-    id: p.word_id,
-    word: p.vocabulary_words.word,
-    phonetic: p.vocabulary_words.phonetic,
-    definition: p.vocabulary_words.definition,
-    state: p.state as FSRSState,
-    stability: p.stability,
-    due_at: p.due_at,
-    last_review_at: p.last_review_at,
-    lapses: p.lapses
-  }))
+  if (error || !data?.success) {
+    logger.warn("Failed to get difficult words via Edge Function", { bookId, userId }, error)
+    return []
+  }
+
+  return data.data as WordWithProgress[]
 }
 
 /**

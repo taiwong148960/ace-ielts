@@ -1,11 +1,12 @@
 /**
  * Supabase Edge Function: Gemini Enrich Word
- * Server-side proxy for Gemini API calls (SaaS mode)
+ * Server-side proxy for Gemini API calls
+ * Supports both SaaS mode (platform-managed API key) and self-hosted mode (user API key)
  */
 
-// @ts-ignore - Deno is available at runtime in Supabase Edge Functions
-// @deno-types="https://deno.land/x/types/index.d.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
+import { initSupabase } from "../_shared/supabase.ts"
+import { safeDecrypt } from "../_shared/crypto.ts"
 
 // Declare Deno global for TypeScript
 declare const Deno: {
@@ -104,78 +105,79 @@ async function generateAudio(
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
-      }
-    })
-  }
+  const origin = req.headers.get("Origin")
+  const corsResponse = handleCors(req)
+  if (corsResponse) return corsResponse
 
   try {
-    // Verify authentication
-    const authHeader = req.headers.get("Authorization")
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        }
-      )
-    }
-
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? ""
-    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY") ?? ""
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: {
-        headers: { Authorization: authHeader }
-      }
-    })
-
-    // Verify user session
-    const {
-      data: { user },
-      error: userError
-    } = await supabase.auth.getUser()
-
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        }
-      )
-    }
+    // Initialize Supabase and verify authentication
+    const { user, supabaseAdmin } = await initSupabase(
+      req.headers.get("Authorization")
+    )
 
     // Get request body
-    const { word } = await req.json()
+    const body = await req.json()
+    const { word } = body
     if (!word || typeof word !== "string") {
-      return new Response(
-        JSON.stringify({ error: "Word parameter is required" }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        }
-      )
+      return errorResponse("Word parameter is required", 400, origin)
     }
 
-    // Get Gemini API key from environment
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY")
+    // Get user settings to retrieve model configuration and API key
+    const { data: userSettings, error: settingsError } = await supabaseAdmin
+      .from("user_settings")
+      .select("gemini_model_config, llm_api_key_encrypted, llm_provider")
+      .eq("user_id", user.id)
+      .single()
+
+    // Extract model config from user settings (if available)
+    const textModelConfig = userSettings?.gemini_model_config?.textModel || {}
+    const ttsModelConfig = userSettings?.gemini_model_config?.ttsModel || {}
+
+    // Use user's model config or defaults
+    const model = textModelConfig.model || DEFAULT_MODEL
+    const temperature = textModelConfig.temperature ?? 0.7
+    const topK = textModelConfig.topK ?? 40
+    const topP = textModelConfig.topP ?? 0.95
+    const maxOutputTokens = textModelConfig.maxOutputTokens ?? 2048
+
+    // Determine API key source: SaaS mode (platform-managed) or self-hosted mode (user-provided)
+    // Priority: 1. Platform API key (SaaS mode), 2. User API key (self-hosted mode)
+    let geminiApiKey: string | null = null
+
+    // Try platform-managed API key first (SaaS mode)
+    const platformApiKey = Deno.env.get("GEMINI_API_KEY")
+    if (platformApiKey) {
+      geminiApiKey = platformApiKey
+      // Using platform-managed API key (SaaS mode)
+    } else {
+      // Fall back to user's API key (self-hosted mode)
+      if (!userSettings?.llm_api_key_encrypted) {
+        return errorResponse(
+          "LLM API key not configured. Please set your API key in settings.",
+          400,
+          origin
+        )
+      }
+
+      // Decrypt the user's API key
+      geminiApiKey = await safeDecrypt(userSettings.llm_api_key_encrypted)
+      if (!geminiApiKey) {
+        return errorResponse("Failed to decrypt API key", 500, origin)
+      }
+
+      // Verify the provider is compatible (should be "gemini" or similar)
+      if (userSettings.llm_provider && userSettings.llm_provider !== "gemini") {
+        return errorResponse(
+          `Unsupported LLM provider: ${userSettings.llm_provider}. This function requires Gemini API.`,
+          400,
+          origin
+        )
+      }
+      // Using user API key (self-hosted mode)
+    }
+
     if (!geminiApiKey) {
-      return new Response(
-        JSON.stringify({ error: "Gemini API key not configured" }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        }
-      )
+      return errorResponse("Gemini API key not available", 500, origin)
     }
 
     // Construct prompt
@@ -232,8 +234,8 @@ Word to analyze: "${word}"
 
 Return ONLY valid JSON, no markdown formatting, no code blocks.`
 
-    // Call Gemini API
-    const url = `${DEFAULT_BASE_URL}/models/${DEFAULT_MODEL}:generateContent?key=${geminiApiKey}`
+    // Call Gemini API with user's model configuration
+    const url = `${DEFAULT_BASE_URL}/models/${model}:generateContent?key=${geminiApiKey}`
 
     const response = await fetch(url, {
       method: "POST",
@@ -251,10 +253,10 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
           }
         ],
         generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 2048,
+          temperature,
+          topK,
+          topP,
+          maxOutputTokens,
           responseMimeType: "application/json"
         }
       })
@@ -264,12 +266,10 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
       const errorText = await response.text()
       console.error("Gemini API error:", errorText)
       
-      return new Response(
-        JSON.stringify({ error: `Gemini API error: ${response.status}` }),
-        {
-          status: response.status,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        }
+      return errorResponse(
+        `Gemini API error: ${response.status}`,
+        response.status,
+        origin
       )
     }
 
@@ -277,13 +277,7 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text
 
     if (!content) {
-      return new Response(
-        JSON.stringify({ error: "No content returned from Gemini API" }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        }
-      )
+      return errorResponse("No content returned from Gemini API", 500, origin)
     }
 
     // Parse JSON response
@@ -292,16 +286,13 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
       const cleanedContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
       wordData = JSON.parse(cleanedContent)
     } catch (parseError) {
-      return new Response(
-        JSON.stringify({ error: "Invalid JSON response from Gemini API" }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        }
-      )
+      return errorResponse("Invalid JSON response from Gemini API", 500, origin)
     }
 
     // Generate audio for word and example sentences
+    // Note: Google Cloud TTS API uses voice parameter (not model)
+    // User's TTS model config is for Gemini TTS, not Google Cloud TTS
+    // So we continue using DEFAULT_VOICE for Google Cloud TTS
     let wordAudioUrl: string | null = null
     let exampleAudioUrls: ExampleAudioData[] | null = null
 
@@ -343,24 +334,23 @@ Return ONLY valid JSON, no markdown formatting, no code blocks.`
       }
     }
 
-    return new Response(
-      JSON.stringify(responseData),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        }
-      }
-    )
+    return successResponse(responseData, 200, origin)
   } catch (error) {
     console.error("Edge function error:", error)
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Internal server error" }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+    
+    if (error instanceof Error) {
+      if (error.message === "Unauthorized" || error.message === "Missing authorization header") {
+        return errorResponse(error.message, 401, origin)
       }
+      if (error.message.includes("API key")) {
+        return errorResponse(error.message, 400, origin)
+      }
+    }
+    
+    return errorResponse(
+      error instanceof Error ? error.message : "Internal server error",
+      500,
+      origin
     )
   }
 })

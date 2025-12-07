@@ -79,66 +79,25 @@ async function getUserProfile(): Promise<UserProfile> {
 
 /**
  * Get study statistics from user_book_progress and review_logs
+ * Calls Edge Function: dashboard-get-study-stats
  */
 async function getStudyStats(userId: string): Promise<StudyStats> {
   const supabase = getSupabase()
 
-  // Get max streak from user_book_progress
-  const { data: progressData, error: progressError } = await supabase
-    .from("user_book_progress")
-    .select("streak_days")
-    .eq("user_id", userId)
+  logger.debug("Fetching study stats via Edge Function", { userId })
 
-  if (progressError) {
-    logger.warn("Failed to fetch book progress for study stats", { userId }, progressError)
+  const { data, error } = await supabase.functions.invoke('dashboard-get-study-stats', {})
+
+  if (error || !data?.success) {
+    logger.warn("Failed to fetch study stats via Edge Function", { userId }, error)
+    return {
+      dayStreak: 0,
+      todayMinutes: 0,
+      totalMinutes: 0
+    }
   }
 
-  const dayStreak = progressData && progressData.length > 0
-    ? Math.max(...progressData.map(p => p.streak_days || 0))
-    : 0
-
-  // Calculate today's study time from review_logs (estimate: 30 seconds per review)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const todayStart = today.toISOString()
-
-  const { data: todayReviews, error: todayError } = await supabase
-    .from("review_logs")
-    .select("review_time_ms")
-    .eq("user_id", userId)
-    .gte("reviewed_at", todayStart)
-
-  if (todayError) {
-    logger.warn("Failed to fetch today's reviews", { userId }, todayError)
-  }
-
-  const todayMinutes = todayReviews
-    ? Math.round(
-        (todayReviews.reduce((sum, r) => sum + (r.review_time_ms || 30000), 0) / 1000) / 60
-      )
-    : 0
-
-  // Calculate total study time from all review_logs
-  const { data: allReviews, error: allError } = await supabase
-    .from("review_logs")
-    .select("review_time_ms")
-    .eq("user_id", userId)
-
-  if (allError) {
-    logger.warn("Failed to fetch all reviews", { userId }, allError)
-  }
-
-  const totalMinutes = allReviews
-    ? Math.round(
-        (allReviews.reduce((sum, r) => sum + (r.review_time_ms || 30000), 0) / 1000) / 60
-      )
-    : 0
-
-  return {
-    dayStreak,
-    todayMinutes,
-    totalMinutes
-  }
+  return data.data as StudyStats
 }
 
 /**
@@ -211,6 +170,7 @@ function getPracticeTasks(): PracticeTask[] {
 
 /**
  * Get browsing history from review_logs
+ * Calls Edge Function: dashboard-get-browsing-history
  */
 async function getBrowsingHistory(
   userId: string,
@@ -218,77 +178,18 @@ async function getBrowsingHistory(
 ): Promise<BrowsingHistoryItem[]> {
   const supabase = getSupabase()
 
-  // Get recent reviews with word information
-  const { data: reviews, error } = await supabase
-    .from("review_logs")
-    .select("id, word_id, book_id, reviewed_at")
-    .eq("user_id", userId)
-    .order("reviewed_at", { ascending: false })
-    .limit(limit)
+  logger.debug("Fetching browsing history via Edge Function", { userId, limit })
 
-  if (error) {
-    logger.warn("Failed to fetch browsing history", { userId, limit }, error)
+  const { data, error } = await supabase.functions.invoke('dashboard-get-browsing-history', {
+    body: { limit }
+  })
+
+  if (error || !data?.success) {
+    logger.warn("Failed to fetch browsing history via Edge Function", { userId, limit }, error)
     return []
   }
 
-  if (!reviews || reviews.length === 0) {
-    return []
-  }
-
-  // Get unique word IDs and book IDs
-  const wordIds = Array.from(new Set(reviews.map(r => r.word_id)))
-  const bookIds = Array.from(new Set(reviews.map(r => r.book_id)))
-
-  // Fetch words and books in parallel
-  const [wordsResult, booksResult] = await Promise.all([
-    supabase
-      .from("vocabulary_words")
-      .select("id, word, book_id")
-      .in("id", wordIds),
-    supabase
-      .from("vocabulary_books")
-      .select("id, name")
-      .in("id", bookIds)
-  ])
-
-  if (wordsResult.error) {
-    logger.warn("Failed to fetch words for browsing history", { userId }, wordsResult.error)
-    return []
-  }
-
-  if (booksResult.error) {
-    logger.warn("Failed to fetch books for browsing history", { userId }, booksResult.error)
-    return []
-  }
-
-  // Create maps for quick lookup
-  const wordsMap = new Map(
-    (wordsResult.data || []).map(w => [w.id, w])
-  )
-  const booksMap = new Map(
-    (booksResult.data || []).map(b => [b.id, b])
-  )
-
-  // Build browsing history items
-  const historyItems: BrowsingHistoryItem[] = []
-
-  for (const review of reviews) {
-    const word = wordsMap.get(review.word_id)
-    const book = booksMap.get(review.book_id)
-
-    if (word) {
-      historyItems.push({
-        id: review.id,
-        type: "word" as const,
-        title: word.word,
-        source: book?.name || "Vocabulary",
-        timestamp: review.reviewed_at,
-        url: undefined
-      })
-    }
-  }
-
-  return historyItems
+  return data.data as BrowsingHistoryItem[]
 }
 
 /**
@@ -339,6 +240,7 @@ function getBlogArticles(): BlogArticle[] {
 
 /**
  * Calculate takeaway stats for a given time range
+ * Calls Edge Function: dashboard-get-takeaway-stats
  */
 async function calculateTakeawayStats(
   userId: string,
@@ -346,47 +248,23 @@ async function calculateTakeawayStats(
 ): Promise<TakeawayStats> {
   const supabase = getSupabase()
   
-  // Calculate date range
-  const now = new Date()
-  let startDate: Date
+  logger.debug("Fetching takeaway stats via Edge Function", { userId, timeRange })
 
-  switch (timeRange) {
-    case "day":
-      startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-      break
-    case "week":
-      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      break
-    case "month":
-      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-      break
-    case "all":
-      startDate = new Date(0) // Beginning of time
-      break
+  const { data, error } = await supabase.functions.invoke('dashboard-get-takeaway-stats', {
+    body: { timeRange }
+  })
+
+  if (error || !data?.success) {
+    logger.warn("Failed to fetch takeaway stats via Edge Function", { userId, timeRange }, error)
+    return {
+      wordsViewed: 0,
+      articlesRead: 0,
+      videosWatched: 0,
+      timeRange
+    }
   }
 
-  // Count unique words viewed from review_logs
-  const { data: reviews, error } = await supabase
-    .from("review_logs")
-    .select("word_id")
-    .eq("user_id", userId)
-    .gte("reviewed_at", startDate.toISOString())
-
-  if (error) {
-    logger.warn("Failed to fetch reviews for takeaway stats", { userId, timeRange }, error)
-  }
-
-  const uniqueWords = reviews
-    ? new Set(reviews.map(r => r.word_id)).size
-    : 0
-
-  // For now, articles and videos are not tracked, return 0
-  return {
-    wordsViewed: uniqueWords,
-    articlesRead: 0,
-    videosWatched: 0,
-    timeRange
-  }
+  return data.data as TakeawayStats
 }
 
 /**

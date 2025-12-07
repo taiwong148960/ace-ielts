@@ -12,6 +12,7 @@ const logger = createLogger("UserSettingsService")
 
 /**
  * Get user settings
+ * Calls Edge Function: user-settings-get
  */
 export async function getUserSettings(userId: string): Promise<UserSettings | null> {
   if (!isSupabaseInitialized()) {
@@ -19,21 +20,21 @@ export async function getUserSettings(userId: string): Promise<UserSettings | nu
   }
 
   const supabase = getSupabase()
-  const { data, error } = await supabase
-    .from("user_settings")
-    .select("*")
-    .eq("user_id", userId)
-    .single()
+  
+  logger.debug("Fetching user settings via Edge Function", { userId })
+
+  const { data, error } = await supabase.functions.invoke('user-settings-get', {})
 
   if (error) {
-    if (error.code === "PGRST116") {
-      return null // Not found
-    }
-    logger.error("Failed to fetch user settings", { userId }, error)
+    logger.error("Failed to fetch user settings via Edge Function", { userId }, error)
     throw new Error("Failed to fetch user settings")
   }
 
-  return data
+  if (!data?.success) {
+    return null
+  }
+
+  return data.data as UserSettings | null
 }
 
 /**
@@ -51,6 +52,7 @@ export async function getOrCreateUserSettings(userId: string): Promise<UserSetti
 
 /**
  * Create default user settings
+ * Calls Edge Function: user-settings-create
  */
 async function createUserSettings(userId: string): Promise<UserSettings> {
   if (!isSupabaseInitialized()) {
@@ -58,22 +60,22 @@ async function createUserSettings(userId: string): Promise<UserSettings> {
   }
 
   const supabase = getSupabase()
-  const { data, error } = await supabase
-    .from("user_settings")
-    .insert({
-      user_id: userId,
-      llm_provider: "gemini"
-    })
-    .select()
-    .single()
+  
+  logger.info("Creating user settings via Edge Function", { userId })
+
+  const { data, error } = await supabase.functions.invoke('user-settings-create', {})
 
   if (error) {
-    logger.error("Failed to create user settings", { userId }, error)
-    throw new Error("Failed to create user settings")
+    logger.error("Failed to create user settings via Edge Function", { userId }, error)
+    throw new Error(error.message || "Failed to create user settings")
+  }
+
+  if (!data?.success) {
+    throw new Error(data?.error || "Failed to create user settings")
   }
   
   logger.info("User settings created", { userId })
-  return data
+  return data.data
 }
 
 /**

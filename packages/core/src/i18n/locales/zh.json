@@ -137,8 +137,8 @@
       "importing": "导入中...",
       "progressText": "{{current}} / {{total}} 个单词已处理",
       "failed": "导入失败",
-      "failedPartial": "成功 {{completed}} 个，失败 {{failed}} 个（共 {{total}} 个）",
-      "failedAll": "所有 {{total}} 个单词导入失败",
+      "failedPartial": "成功 {{completed}} 个，失败 {{failed}} 个",
+      "failedAll": "所有单词导入失败",
       "retry": "重试",
       "retrying": "正在重试...",
       "badge": "导入中",
@@ -215,7 +215,14 @@
       "estimatedCompletionMonths": "约 {{months}} 个月",
       "estimatedCompletionAtPace": "按当前进度",
       "noRecentWords": "暂无学习记录",
-      "noDifficultWords": "暂无困难词汇"
+      "noDifficultWords": "暂无困难词汇",
+      "importStatus": {
+        "importing": "导入中",
+        "importingProgress": "{{current}} / {{total}} 个单词",
+        "completed": "导入完成",
+        "failed": "导入失败",
+        "failedWithError": "导入失败：{{error}}"
+      }
     },
     "settings": {
       "title": "词本设置",
