@@ -64,7 +64,6 @@ jobs:
       matrix:
         package:
           - web
-          - extension
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
