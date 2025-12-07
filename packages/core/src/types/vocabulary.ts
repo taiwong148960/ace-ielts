@@ -2,6 +2,12 @@
  * Vocabulary Types
  * Type definitions for vocabulary books and words
  * Includes FSRS (Free Spaced Repetition Scheduler) compatible types
+ * 
+ * ⚠️ SYNC REQUIRED: Some types/constants must stay in sync with:
+ *    - supabase/functions/_shared/types.ts (Edge Function types)
+ * 
+ * Types marked with @sync should be kept aligned with the corresponding
+ * Edge Function types when modified.
  */
 
 /**
@@ -16,6 +22,7 @@ export type WordMasteryLevel = "new" | "learning" | "reviewing" | "mastered"
 
 /**
  * FSRS Card State
+ * @sync supabase/functions/_shared/types.ts - FSRSState
  * - new: Never reviewed
  * - learning: In short-term learning phase (minutes-based)
  * - review: Graduated to long-term review (days-based)
@@ -25,6 +32,7 @@ export type FSRSState = "new" | "learning" | "review" | "relearning"
 
 /**
  * FSRS Rating (1-4 scale)
+ * @sync supabase/functions/_shared/types.ts - FSRSRating
  * 1 = Again (forgot), 2 = Hard, 3 = Good, 4 = Easy
  */
 export type FSRSRating = 1 | 2 | 3 | 4

@@ -39,7 +39,7 @@ export interface IVocabularyApi {
   // Words
   getBookWords(bookId: string): Promise<VocabularyWord[]>
   addWords(bookId: string, words: string[]): Promise<VocabularyWord[]>
-  deleteWord(wordId: string): Promise<void>
+  deleteWord(wordId: string, bookId: string): Promise<void>
 }
 
 /**
@@ -544,11 +544,7 @@ export const vocabularyApi: IVocabularyApi = {
   getUserBooksWithProgress,
   getBookWords,
   addWords,
-  deleteWord: async (wordId: string) => {
-    // We need bookId to update word count, but for simple delete we can skip
-    const supabase = getSupabase()
-    await supabase.from("vocabulary_words").delete().eq("id", wordId)
-  }
+  deleteWord
 }
 
 export default vocabularyApi

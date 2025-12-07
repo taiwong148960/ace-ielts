@@ -4,7 +4,11 @@
  */
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
+import { createLogger } from "../_shared/logger.ts"
 import { BOOK_COVER_COLORS, type CreateBookInput } from "../_shared/types.ts"
+
+// Create logger for this function
+const logger = createLogger("vocabulary-create-book")
 
 // Declare Deno global
 declare const Deno: {
@@ -64,9 +68,11 @@ Deno.serve(async (req) => {
       .single()
 
     if (bookError) {
-      console.error("Failed to create book:", bookError)
+      logger.error("Failed to create book", { userId: user.id, bookName: input.name }, new Error(bookError.message))
       return errorResponse("Failed to create vocabulary book", 500)
     }
+
+    logger.info("Book created", { bookId: book.id, userId: user.id, bookName: input.name })
 
     // Add words to the book
     if (cleanedWords.length > 0) {
@@ -80,8 +86,10 @@ Deno.serve(async (req) => {
         .insert(wordsToInsert)
 
       if (wordsError) {
-        console.error("Failed to add words:", wordsError)
+        logger.warn("Failed to add words to book", { bookId: book.id, wordCount: cleanedWords.length }, new Error(wordsError.message))
         // Don't fail - book was created, just words failed
+      } else {
+        logger.info("Words added to book", { bookId: book.id, wordCount: cleanedWords.length })
       }
     }
 
@@ -99,13 +107,13 @@ Deno.serve(async (req) => {
       })
 
     if (progressError) {
-      console.error("Failed to create progress:", progressError)
+      logger.warn("Failed to create book progress", { bookId: book.id, userId: user.id }, new Error(progressError.message))
       // Don't fail - book was created
     }
 
     return successResponse(book)
   } catch (error) {
-    console.error("Edge function error:", error)
+    logger.error("Edge function error", {}, error instanceof Error ? error : new Error(String(error)))
     
     if (error instanceof Error) {
       if (error.message === "Unauthorized" || error.message === "Missing authorization header") {

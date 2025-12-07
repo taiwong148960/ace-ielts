@@ -20,7 +20,8 @@ import {
   useCreateBook,
   BOOK_COVER_COLORS,
   startImport,
-  useInvalidateVocabularyBooks
+  useInvalidateVocabularyBooks,
+  createLogger
 } from "@ace-ielts/core"
 
 import {
@@ -123,6 +124,7 @@ export function CreateBookDialog({
   const { t } = useTranslation()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { invalidateUser } = useInvalidateVocabularyBooks()
+  const logger = createLogger("CreateBookDialog")
 
   // Form state
   const [name, setName] = useState("")
@@ -157,7 +159,7 @@ export function CreateBookDialog({
             invalidateUser(userId)
           })
           .catch((error) => {
-            console.error("Failed to start import task:", error)
+            logger.error("Failed to start import task", { bookId: book.id, userId }, error instanceof Error ? error : new Error(String(error)))
             // Even if import fails, invalidate to show failed status
             invalidateUser(userId)
             // Import will be retryable from the book list page
@@ -171,7 +173,7 @@ export function CreateBookDialog({
       }
     },
     onError: (err) => {
-      console.error("Error creating book:", err)
+      logger.error("Error creating book", { userId }, err instanceof Error ? err : new Error(String(err)))
       setError(t("vocabulary.createBook.errors.createFailed"))
     }
   })

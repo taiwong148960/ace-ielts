@@ -4,8 +4,12 @@
  */
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
+import { createLogger } from "../_shared/logger.ts"
 import { processReview, createInitialWordProgress } from "../_shared/fsrs.ts"
 import { type ProcessReviewInput, type FSRSRating } from "../_shared/types.ts"
+
+// Create logger for this function
+const logger = createLogger("vocabulary-process-review")
 
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void
@@ -64,10 +68,11 @@ Deno.serve(async (req) => {
         .single()
 
       if (error) {
-        console.error("Failed to create word progress:", error)
+        logger.error("Failed to create word progress", { userId: user.id, wordId: input.wordId }, new Error(error.message))
         return errorResponse("Failed to create word progress", 500)
       }
       progress = newProgress
+      logger.info("Created initial word progress", { userId: user.id, wordId: input.wordId, bookId: input.bookId })
     }
 
     // Calculate new scheduling with FSRS
@@ -114,9 +119,18 @@ Deno.serve(async (req) => {
       .single()
 
     if (updateError) {
-      console.error("Failed to update word progress:", updateError)
+      logger.error("Failed to update word progress", { userId: user.id, wordId: input.wordId, rating }, new Error(updateError.message))
       return errorResponse("Failed to update word progress", 500)
     }
+
+    logger.info("Word review processed", { 
+      userId: user.id, 
+      wordId: input.wordId, 
+      bookId: input.bookId,
+      rating,
+      newState: updatedProgress.state,
+      scheduledDays: updatedProgress.scheduled_days
+    })
 
     // Log the review
     await supabaseAdmin.from("review_logs").insert({
@@ -141,7 +155,7 @@ Deno.serve(async (req) => {
 
     return successResponse(updatedProgress)
   } catch (error) {
-    console.error("Edge function error:", error)
+    logger.error("Edge function error", {}, error instanceof Error ? error : new Error(String(error)))
     
     if (error instanceof Error) {
       if (error.message === "Unauthorized" || error.message === "Missing authorization header") {

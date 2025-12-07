@@ -4,6 +4,7 @@
  */
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
+import { encrypt } from "../_shared/crypto.ts"
 
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void
@@ -24,16 +25,6 @@ interface UpdateSettingsInput {
   }
 }
 
-/**
- * Simple encryption for API keys
- * In production, use Supabase Vault or proper encryption
- */
-function encryptApiKey(apiKey: string): string {
-  // Base64 encoding as a simple obfuscation
-  // TODO: Use proper encryption (Supabase Vault recommended)
-  return btoa(apiKey)
-}
-
 Deno.serve(async (req) => {
   const corsResponse = handleCors(req)
   if (corsResponse) return corsResponse
@@ -52,9 +43,9 @@ Deno.serve(async (req) => {
       updateData.llm_provider = input.llm_provider
     }
     
-    // Encrypt API key before storage
+    // Encrypt API key before storage using AES-GCM
     if (input.llm_api_key !== undefined) {
-      updateData.llm_api_key_encrypted = encryptApiKey(input.llm_api_key)
+      updateData.llm_api_key_encrypted = await encrypt(input.llm_api_key)
     }
 
     // Update Gemini model configuration

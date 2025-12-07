@@ -32,15 +32,16 @@ export function createQueryClient() {
 
 // Query keys for consistent cache management
 export const queryKeys = {
-  // Vocabulary
+  // Vocabulary Books
   vocabularyBooks: {
     all: ["vocabularyBooks"] as const,
     user: (userId: string) => ["vocabularyBooks", "user", userId] as const,
     system: (userId: string) => ["vocabularyBooks", "system", userId] as const,
     detail: (bookId: string) => ["vocabularyBooks", "detail", bookId] as const,
-    settings: (userId: string, bookId: string) => ["vocabularyBooks", "settings", userId, bookId] as const
+    settings: (userId: string, bookId: string) => ["vocabularyBooks", "settings", userId, bookId] as const,
+    words: (bookId: string) => ["vocabularyBooks", "words", bookId] as const
   },
-  // Book detail
+  // Book Detail
   bookDetail: {
     all: ["bookDetail"] as const,
     byId: (bookId: string, userId: string) => ["bookDetail", bookId, userId] as const,
@@ -48,11 +49,22 @@ export const queryKeys = {
     difficultWords: (bookId: string, userId: string) => ["bookDetail", "difficultWords", bookId, userId] as const,
     todaySession: (bookId: string, userId: string) => ["bookDetail", "todaySession", bookId, userId] as const
   },
+  // Vocabulary Import
+  vocabularyImport: {
+    all: ["vocabularyImport"] as const,
+    progress: (bookId: string) => ["vocabularyImport", "progress", bookId] as const,
+    failedWords: (bookId: string) => ["vocabularyImport", "failedWords", bookId] as const
+  },
   // Dashboard
   dashboard: {
     all: ["dashboard"] as const,
     data: () => ["dashboard", "data"] as const,
     takeawayStats: (timeRange: string) => ["dashboard", "takeaway", timeRange] as const
+  },
+  // User Settings
+  userSettings: {
+    all: ["userSettings"] as const,
+    byUser: (userId: string) => ["userSettings", userId] as const
   }
 } as const
 

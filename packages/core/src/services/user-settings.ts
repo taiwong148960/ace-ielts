@@ -117,28 +117,39 @@ export async function updateUserSettings(
 /**
  * Get LLM API key (decrypted)
  * Only available in self-hosted mode
+ * Calls Edge Function for secure server-side decryption
  */
 export async function getLLMApiKey(userId: string): Promise<string | null> {
-  const settings = await getUserSettings(userId)
-  if (!settings || !settings.llm_api_key_encrypted) {
+  if (!isSupabaseInitialized()) {
+    throw new Error("Supabase not initialized")
+  }
+
+  const supabase = getSupabase()
+  
+  logger.debug("Fetching decrypted API key via Edge Function", { userId })
+
+  const { data, error } = await supabase.functions.invoke('user-settings-get-api-key', {})
+
+  if (error) {
+    logger.error("Failed to get API key via Edge Function", { userId }, error)
     return null
   }
 
-  // Decrypt the API key
-  // TODO: Use proper decryption (currently using base64)
-  try {
-    return atob(settings.llm_api_key_encrypted) // Temporary: use proper decryption
-  } catch (error) {
-    logger.error("Failed to decrypt API key", { userId }, error instanceof Error ? error : new Error("Decryption failed"))
+  if (!data?.success || !data?.data?.hasApiKey) {
     return null
   }
+
+  return data.data.apiKey
 }
 
 /**
  * Check if user has API key configured
+ * This checks the settings without decrypting the key
  */
 export async function hasLLMApiKey(userId: string): Promise<boolean> {
-  const apiKey = await getLLMApiKey(userId)
-  return apiKey !== null && apiKey.length > 0
+  const settings = await getUserSettings(userId)
+  return settings !== null && 
+         settings.llm_api_key_encrypted !== null && 
+         settings.llm_api_key_encrypted.length > 0
 }
 

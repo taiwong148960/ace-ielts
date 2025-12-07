@@ -1,8 +1,65 @@
 /**
- * CORS headers for Edge Functions
+ * CORS configuration for Edge Functions
+ * 
+ * Allowed origins:
+ * - Production: https://www.ace-ielts.net
+ * - Development: http://localhost:3000, http://localhost:5173
+ * - Desktop (Tauri): tauri://localhost
+ */
+
+// Declare Deno global for TypeScript
+declare const Deno: {
+  env: {
+    get: (key: string) => string | undefined
+  }
+}
+
+/**
+ * Allowed origins for CORS
+ * In production, this is restricted to specific domains
+ * In development, localhost is allowed
+ */
+const ALLOWED_ORIGINS = [
+  "https://www.ace-ielts.net",
+  "https://ace-ielts.net",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173",
+  "tauri://localhost"
+]
+
+/**
+ * Check if an origin is allowed
+ */
+function isAllowedOrigin(origin: string | null): boolean {
+  if (!origin) return false
+  return ALLOWED_ORIGINS.includes(origin)
+}
+
+/**
+ * Get CORS headers based on request origin
+ * Returns the specific origin if allowed, otherwise returns the first allowed origin
+ */
+export function getCorsHeaders(origin: string | null): Record<string, string> {
+  const allowedOrigin = origin && isAllowedOrigin(origin) 
+    ? origin 
+    : ALLOWED_ORIGINS[0]
+  
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Credentials": "true"
+  }
+}
+
+/**
+ * Legacy corsHeaders for backwards compatibility
+ * Note: Prefer using getCorsHeaders(origin) for proper origin validation
  */
 export const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGINS[0],
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
 }
@@ -12,9 +69,10 @@ export const corsHeaders = {
  */
 export function handleCors(req: Request): Response | null {
   if (req.method === "OPTIONS") {
+    const origin = req.headers.get("Origin")
     return new Response(null, {
       status: 200,
-      headers: corsHeaders
+      headers: getCorsHeaders(origin)
     })
   }
   return null
@@ -25,13 +83,14 @@ export function handleCors(req: Request): Response | null {
  */
 export function jsonResponse(
   data: unknown,
-  status: number = 200
+  status: number = 200,
+  origin?: string | null
 ): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json",
-      ...corsHeaders
+      ...getCorsHeaders(origin ?? null)
     }
   })
 }
@@ -41,9 +100,10 @@ export function jsonResponse(
  */
 export function errorResponse(
   message: string,
-  status: number = 400
+  status: number = 400,
+  origin?: string | null
 ): Response {
-  return jsonResponse({ error: message, success: false }, status)
+  return jsonResponse({ error: message, success: false }, status, origin)
 }
 
 /**
@@ -51,7 +111,8 @@ export function errorResponse(
  */
 export function successResponse<T>(
   data: T,
-  status: number = 200
+  status: number = 200,
+  origin?: string | null
 ): Response {
-  return jsonResponse({ success: true, data }, status)
+  return jsonResponse({ success: true, data }, status, origin)
 }

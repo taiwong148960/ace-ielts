@@ -110,10 +110,11 @@ export async function importWords(bookId: string, words: Word[]): Promise<void> 
 - **Prohibited:** DO NOT write complex native DOM components (Modals, Dropdowns, Date Pickers) from scratch.
 
 ## 2. Visual Style & Tailwind Config
-- **Primary Color:** `#0E7569` (Teal/Emerald range). Use `bg-primary` or equivalent in Tailwind config.
+- **Primary Color:** `#0D9488` (Teal/Emerald range). Use `bg-primary` or equivalent in Tailwind config.
 - **Font:** `Plus Jakarta Sans` (Sans), `DM Serif Display` (Headings).
 - **Radius:** Default radius is `0.5rem` (8px/sm) or `0.75rem` (12px/md).
 - **Shadows:** Use subtle shadows for depth (Card style).
+- **Note:** For complete design system tokens, refer to `design.mdc`. This section only covers basic styling rules.
 
 ## 3. Assets & Media
 - **Icons:** Use **Lucide React** exclusively. Import pattern: `import { IconName } from "lucide-react"`.
@@ -259,6 +260,212 @@ const logger = createLogger("useVocabularyImport")
 
 // Log only for debugging complex async flows
 logger.debug("Import state changed", { status, progress })
+```
+
+# Error Handling
+
+## 1. Error Handling Architecture
+
+### Service Layer Error Handling
+- **Always throw errors** - Let React Query catch and handle them
+- **Use descriptive error messages** - Include context (userId, bookId, etc.)
+- **Preserve original errors** - Wrap with context, don't replace
+
+```typescript
+// ✅ Good: Descriptive error with context
+export async function createBook(data: CreateBookInput): Promise<Book> {
+  try {
+    const { data: result, error } = await supabase.functions.invoke('vocabulary-create-book', {
+      body: data
+    })
+    
+    if (error) {
+      throw new Error(`Failed to create book: ${error.message}`)
+    }
+    
+    if (!result) {
+      throw new Error('No data returned from create book function')
+    }
+    
+    return result
+  } catch (error) {
+    logger.error("Book creation failed", { userId: data.userId, bookName: data.name }, error as Error)
+    throw error // Re-throw to let React Query handle
+  }
+}
+```
+
+### Edge Function Error Response Format
+Edge Functions MUST return standardized error responses:
+
+```typescript
+// supabase/functions/example/index.ts
+try {
+  // ... operation
+  return new Response(JSON.stringify({ success: true, data: result }), {
+    headers: { "Content-Type": "application/json" }
+  })
+} catch (error) {
+  return new Response(JSON.stringify({ 
+    success: false, 
+    error: error.message,
+    code: error.code || "UNKNOWN_ERROR"
+  }), {
+    status: error.status || 400,
+    headers: { "Content-Type": "application/json" }
+  })
+}
+```
+
+### Frontend Error Handling
+- **React Query handles errors automatically** - Use `isError` and `error` from hooks
+- **Display user-friendly messages** - Don't expose technical details
+- **Use Error Boundaries** - Catch unexpected errors in component tree
+
+```typescript
+// ✅ Good: User-friendly error display
+const { data, isLoading, isError, error } = useBooks()
+
+if (isError) {
+  return (
+    <Alert variant="destructive">
+      <AlertDescription>
+        {t('errors.failedToLoadBooks')}
+      </AlertDescription>
+    </Alert>
+  )
+}
+```
+
+## 2. Error Types
+
+| Error Type | When to Use | User Message |
+|------------|-------------|--------------|
+| `ValidationError` | Invalid input data | "Please check your input and try again" |
+| `NotFoundError` | Resource doesn't exist | "The requested item was not found" |
+| `UnauthorizedError` | Authentication required | "Please sign in to continue" |
+| `NetworkError` | Connection issues | "Connection failed. Please check your internet." |
+| `ServerError` | Backend failures | "Something went wrong. Please try again later." |
+
+## 3. Error Recovery
+
+- **Retry logic** - Use React Query's built-in retry for transient errors
+- **Fallback UI** - Show cached data if available
+- **User actions** - Provide "Retry" buttons for failed operations
+
+# Performance Optimization
+
+## 1. Code Splitting & Lazy Loading
+
+### Route-based Code Splitting
+```typescript
+// ✅ Good: Lazy load routes
+import { lazy } from 'react'
+
+const VocabularyBooks = lazy(() => import('@ace-ielts/ui/pages/vocabulary/VocabularyBooks'))
+const Settings = lazy(() => import('@ace-ielts/ui/pages/Settings'))
+```
+
+### Component Lazy Loading
+```typescript
+// ✅ Good: Lazy load heavy components
+const Chart = lazy(() => import('./Chart'))
+
+function Dashboard() {
+  return (
+    <Suspense fallback={<ChartSkeleton />}>
+      <Chart data={data} />
+    </Suspense>
+  )
+}
+```
+
+## 2. React Query Optimization
+
+### Query Key Management
+- **Use factory functions** - Centralize query key generation
+- **Include dependencies** - Add filters, pagination to keys
+
+```typescript
+// ✅ Good: Centralized query keys
+export const vocabularyKeys = {
+  all: ['vocabulary'] as const,
+  books: () => [...vocabularyKeys.all, 'books'] as const,
+  book: (id: string) => [...vocabularyKeys.books(), id] as const,
+  words: (bookId: string) => [...vocabularyKeys.book(bookId), 'words'] as const,
+}
+```
+
+### Cache Configuration
+```typescript
+// ✅ Good: Optimize cache settings
+export function useBooks() {
+  return useQuery({
+    queryKey: vocabularyKeys.books(),
+    queryFn: getBooks,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+  })
+}
+```
+
+### Optimistic Updates
+```typescript
+// ✅ Good: Optimistic updates for better UX
+const mutation = useMutation({
+  mutationFn: updateBook,
+  onMutate: async (newBook) => {
+    await queryClient.cancelQueries({ queryKey: vocabularyKeys.books() })
+    const previousBooks = queryClient.getQueryData(vocabularyKeys.books())
+    queryClient.setQueryData(vocabularyKeys.books(), (old) => 
+      old.map(book => book.id === newBook.id ? newBook : book)
+    )
+    return { previousBooks }
+  },
+  onError: (err, newBook, context) => {
+    queryClient.setQueryData(vocabularyKeys.books(), context.previousBooks)
+  },
+})
+```
+
+## 3. List Rendering Optimization
+
+### Virtual Scrolling
+- **Use for long lists** - 100+ items
+- **Libraries:** `@tanstack/react-virtual` or `react-window`
+
+### Memoization
+```typescript
+// ✅ Good: Memoize expensive computations
+const sortedWords = useMemo(() => {
+  return words.sort((a, b) => a.word.localeCompare(b.word))
+}, [words])
+
+// ✅ Good: Memoize callbacks
+const handleWordClick = useCallback((wordId: string) => {
+  navigate(`/vocabulary/words/${wordId}`)
+}, [navigate])
+```
+
+## 4. Image & Asset Optimization
+
+- **Use WebP format** - Better compression
+- **Lazy load images** - Use `loading="lazy"` attribute
+- **Responsive images** - Use `srcset` for different screen sizes
+- **Optimize SVGs** - Remove unnecessary metadata
+
+## 5. Bundle Size Optimization
+
+- **Tree shaking** - Import only what you need
+- **Avoid barrel imports in production** - Import directly from source files
+- **Analyze bundle** - Use `vite-bundle-visualizer` or `webpack-bundle-analyzer`
+
+```typescript
+// ❌ Bad: Import entire library
+import * as Icons from 'lucide-react'
+
+// ✅ Good: Import specific icons
+import { Book, Settings } from 'lucide-react'
 ```
 
 # Language

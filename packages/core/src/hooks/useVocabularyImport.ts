@@ -5,6 +5,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { startImport, getImportProgress, retryFailedWords } from "../services/vocabulary-import"
+import { queryKeys } from "../query"
 import type { ImportProgress } from "../types/vocabulary"
 
 /**
@@ -19,7 +20,7 @@ export function useVocabularyImport(bookId: string | null, userId: string | null
     isLoading: isLoadingProgress,
     refetch: refetchProgress
   } = useQuery<ImportProgress | null>({
-    queryKey: ["vocabulary-import-progress", bookId],
+    queryKey: queryKeys.vocabularyImport.progress(bookId || ""),
     queryFn: () => (bookId ? getImportProgress(bookId) : null),
     enabled: !!bookId,
     refetchInterval: (query) => {
@@ -57,9 +58,9 @@ export function useVocabularyImport(bookId: string | null, userId: string | null
     },
     onSuccess: () => {
       // Invalidate and refetch progress
-      queryClient.invalidateQueries({ queryKey: ["vocabulary-import-progress", bookId] })
-      queryClient.invalidateQueries({ queryKey: ["vocabulary-books"] })
-      queryClient.invalidateQueries({ queryKey: ["vocabulary-book", bookId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vocabularyImport.progress(bookId || "") })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vocabularyBooks.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vocabularyBooks.detail(bookId || "") })
     }
   })
 
@@ -72,9 +73,9 @@ export function useVocabularyImport(bookId: string | null, userId: string | null
       return retryFailedWords(bookId, userId)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vocabulary-import-progress", bookId] })
-      queryClient.invalidateQueries({ queryKey: ["vocabulary-books"] })
-      queryClient.invalidateQueries({ queryKey: ["vocabulary-book", bookId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vocabularyImport.progress(bookId || "") })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vocabularyBooks.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vocabularyBooks.detail(bookId || "") })
     }
   })
 

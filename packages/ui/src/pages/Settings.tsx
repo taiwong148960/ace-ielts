@@ -20,6 +20,7 @@ import {
   useUserSettings,
   useNavigation,
   isSelfHostedMode,
+  createLogger,
   type LLMProvider,
   type GeminiTextModel,
   type GeminiTTSModel,
@@ -50,6 +51,7 @@ export function Settings() {
   const { t } = useTranslation()
   const navigation = useNavigation()
   const { user } = useAuth()
+  const logger = createLogger("Settings")
   const {
     settings,
     isLoading,
@@ -157,7 +159,7 @@ export function Settings() {
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (error) {
-      console.error("Error saving settings:", error)
+      logger.error("Error saving settings", { userId: user?.id }, error instanceof Error ? error : new Error(String(error)))
     }
   }
 

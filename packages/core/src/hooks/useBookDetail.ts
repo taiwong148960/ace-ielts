@@ -13,6 +13,7 @@ import {
 } from "../services/vocabulary-detail"
 import { stateToMasteryLevel } from "../services/fsrs"
 import { queryKeys } from "../query"
+import { createLogger } from "../utils/logger"
 import type {
   VocabularyBook,
   UserBookProgress,
@@ -48,6 +49,7 @@ export interface UseBookDetailReturn extends BookDetailData {
  */
 export function useBookDetail(bookId: string | null, userId: string | null): UseBookDetailReturn {
   const queryClient = useQueryClient()
+  const logger = createLogger("useBookDetail")
   const enabled = !!bookId && !!userId
 
   // Main query for book details (book, progress, stats)
@@ -119,7 +121,7 @@ export function useBookDetail(bookId: string | null, userId: string | null): Use
         )
       }
     } catch (err) {
-      console.error("Error initializing progress:", err)
+      logger.error("Error initializing progress", { bookId, userId }, err instanceof Error ? err : new Error(String(err)))
     }
   }
 

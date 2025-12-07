@@ -9,6 +9,7 @@ import { Settings, Loader2, AlertCircle, X } from "lucide-react"
 import {
   useTranslation,
   useBookSettings,
+  createLogger,
   type StudyOrder,
   type LearningMode
 } from "@ace-ielts/core"
@@ -43,6 +44,7 @@ export function BookSettingsDialog({
   onSuccess
 }: BookSettingsDialogProps) {
   const { t } = useTranslation()
+  const logger = createLogger("BookSettingsDialog")
 
   // Use TanStack Query hook for fetching and updating settings
   const {
@@ -116,7 +118,7 @@ export function BookSettingsDialog({
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
-      console.error("Error saving settings:", err)
+      logger.error("Error saving settings", { userId, bookId }, err instanceof Error ? err : new Error(String(err)))
       setError(t("vocabulary.settings.errors.saveFailed"))
     }
   }
