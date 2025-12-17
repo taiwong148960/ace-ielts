@@ -2,9 +2,7 @@
 -- 1. Extensions Setup
 -- ============================================
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
--- Try to enable optional extensions gracefully
 DO $$
 BEGIN
     CREATE EXTENSION IF NOT EXISTS "pg_cron" WITH SCHEMA "extensions";
@@ -20,15 +18,19 @@ EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'pg_net could not be installed'; END $$;
 -- ============================================
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'import_status_enum') THEN
-        CREATE TYPE public.import_status_enum AS ENUM ('pending', 'importing', 'completed', 'failed');
+        CREATE TYPE public.import_status_enum AS ENUM ('pending', 'importing', 'done', 'failed');
     END IF;
 END $$;
 
 -- ============================================
--- 3. Helper Functions (Generic)
+-- 3. Helper Functions
 -- ============================================
 CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
@@ -39,7 +41,24 @@ $$;
 -- 4. Tables Definition
 -- ============================================
 
--- 4.1 Vocabulary Books
+-- 4.1 Global Vocabulary Words (Shared across all books)
+CREATE TABLE IF NOT EXISTS "public"."vocabulary_words" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "word" VARCHAR(200) NOT NULL UNIQUE,
+    "phonetic" VARCHAR(200),
+    "definition" TEXT,
+    "example_sentence" TEXT,
+    "word_details" JSONB,
+    "import_status" public.import_status_enum DEFAULT 'pending',
+    "import_error" TEXT,
+    "word_audio_url" TEXT,
+    "example_audio_urls" JSONB,
+    "locked_by" TEXT,
+    "created_at" TIMESTAMPTZ DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4.2 Vocabulary Books
 CREATE TABLE IF NOT EXISTS "public"."vocabulary_books" (
     "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "name" VARCHAR(100) NOT NULL,
@@ -51,35 +70,23 @@ CREATE TABLE IF NOT EXISTS "public"."vocabulary_books" (
     "user_id" UUID REFERENCES "auth"."users"("id") ON DELETE CASCADE,
     "word_count" INTEGER DEFAULT 0,
     "import_status" public.import_status_enum DEFAULT 'pending',
-    "import_progress" INTEGER DEFAULT 0,
-    "import_total" INTEGER DEFAULT 0,
-    "import_started_at" TIMESTAMPTZ,
-    "import_completed_at" TIMESTAMPTZ,
-    "import_error" TEXT,
     "created_at" TIMESTAMPTZ DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4.2 Vocabulary Words
-CREATE TABLE IF NOT EXISTS "public"."vocabulary_words" (
+-- 4.3 Book-Word Junction Table (Links books to global words)
+CREATE TABLE IF NOT EXISTS "public"."vocabulary_book_words" (
     "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "book_id" UUID NOT NULL REFERENCES "public"."vocabulary_books"("id") ON DELETE CASCADE,
-    "word" VARCHAR(200) NOT NULL,
-    "phonetic" VARCHAR(200),
-    "definition" TEXT,
-    "example_sentence" TEXT,
+    "word_id" UUID NOT NULL REFERENCES "public"."vocabulary_words"("id") ON DELETE CASCADE,
+    "sort_order" INTEGER DEFAULT 0,
     "notes" TEXT,
-    "word_details" JSONB,
-    "import_status" public.import_status_enum DEFAULT 'pending',
-    "import_error" TEXT,
-    "word_audio_url" TEXT,
-    "example_audio_urls" JSONB,
     "created_at" TIMESTAMPTZ DEFAULT NOW(),
-    "updated_at" TIMESTAMPTZ DEFAULT NOW()
+    CONSTRAINT "vocabulary_book_words_book_word_unique" UNIQUE ("book_id", "word_id")
 );
 
--- 4.3 User Book Progress
-CREATE TABLE IF NOT EXISTS "public"."user_book_progress" (
+-- 4.4 User Book Progress
+CREATE TABLE IF NOT EXISTS "public"."vocabulary_user_book_progress" (
     "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL REFERENCES "auth"."users"("id") ON DELETE CASCADE,
     "book_id" UUID NOT NULL REFERENCES "public"."vocabulary_books"("id") ON DELETE CASCADE,
@@ -97,16 +104,15 @@ CREATE TABLE IF NOT EXISTS "public"."user_book_progress" (
     "daily_review_limit" INTEGER DEFAULT 100,
     "created_at" TIMESTAMPTZ DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT "user_book_progress_user_id_book_id_key" UNIQUE ("user_id", "book_id")
+    CONSTRAINT "vocabulary_user_book_progress_user_id_book_id_key" UNIQUE ("user_id", "book_id")
 );
 
--- 4.4 User Word Progress (FSRS)
-CREATE TABLE IF NOT EXISTS "public"."user_word_progress" (
+-- 4.5 User Word Progress (FSRS) - Per user per word per book
+CREATE TABLE IF NOT EXISTS "public"."vocabulary_user_word_progress" (
     "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL REFERENCES "auth"."users"("id") ON DELETE CASCADE,
     "word_id" UUID NOT NULL REFERENCES "public"."vocabulary_words"("id") ON DELETE CASCADE,
     "book_id" UUID NOT NULL REFERENCES "public"."vocabulary_books"("id") ON DELETE CASCADE,
-    -- Legacy / Compatibility columns
     "mastery_level" VARCHAR(20) DEFAULT 'new' CHECK (mastery_level IN ('new', 'learning', 'reviewing', 'mastered')),
     "review_count" INTEGER DEFAULT 0,
     "correct_count" INTEGER DEFAULT 0,
@@ -114,7 +120,6 @@ CREATE TABLE IF NOT EXISTS "public"."user_word_progress" (
     "next_review_at" TIMESTAMPTZ,
     "ease_factor" NUMERIC(4,2) DEFAULT 2.5,
     "interval_days" INTEGER DEFAULT 0,
-    -- FSRS specific columns
     "state" TEXT NOT NULL DEFAULT 'new' CHECK (state IN ('new', 'learning', 'review', 'relearning')),
     "difficulty" FLOAT NOT NULL DEFAULT 0,
     "stability" FLOAT NOT NULL DEFAULT 0,
@@ -130,11 +135,11 @@ CREATE TABLE IF NOT EXISTS "public"."user_word_progress" (
     "correct_reviews" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMPTZ DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT "user_word_progress_user_id_word_id_key" UNIQUE ("user_id", "word_id")
+    CONSTRAINT "vocabulary_user_word_progress_user_word_book_key" UNIQUE ("user_id", "word_id", "book_id")
 );
 
--- 4.5 Settings Tables
-CREATE TABLE IF NOT EXISTS "public"."book_settings" (
+-- 4.6 Settings Tables
+CREATE TABLE IF NOT EXISTS "public"."vocabulary_book_settings" (
     "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL REFERENCES "auth"."users"("id") ON DELETE CASCADE,
     "book_id" UUID NOT NULL REFERENCES "public"."vocabulary_books"("id") ON DELETE CASCADE,
@@ -144,7 +149,7 @@ CREATE TABLE IF NOT EXISTS "public"."book_settings" (
     "study_order" TEXT NOT NULL DEFAULT 'sequential' CHECK (study_order IN ('sequential', 'random')),
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT "book_settings_user_book_key" UNIQUE ("user_id", "book_id")
+    CONSTRAINT "vocabulary_book_settings_user_book_key" UNIQUE ("user_id", "book_id")
 );
 
 CREATE TABLE IF NOT EXISTS "public"."user_settings" (
@@ -158,21 +163,13 @@ CREATE TABLE IF NOT EXISTS "public"."user_settings" (
     CONSTRAINT "user_settings_user_id_key" UNIQUE ("user_id")
 );
 
-CREATE TABLE IF NOT EXISTS "public"."app_settings" (
-    "key" TEXT PRIMARY KEY,
-    "value" TEXT NOT NULL,
-    "description" TEXT,
-    "created_at" TIMESTAMPTZ DEFAULT NOW(),
-    "updated_at" TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 4.6 Review Logs
-CREATE TABLE IF NOT EXISTS "public"."review_logs" (
+-- 4.7 Review Logs
+CREATE TABLE IF NOT EXISTS "public"."vocabulary_review_logs" (
     "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL REFERENCES "auth"."users"("id") ON DELETE CASCADE,
     "word_id" UUID NOT NULL REFERENCES "public"."vocabulary_words"("id") ON DELETE CASCADE,
     "book_id" UUID NOT NULL REFERENCES "public"."vocabulary_books"("id") ON DELETE CASCADE,
-    "progress_id" UUID NOT NULL REFERENCES "public"."user_word_progress"("id") ON DELETE CASCADE,
+    "progress_id" UUID NOT NULL REFERENCES "public"."vocabulary_user_word_progress"("id") ON DELETE CASCADE,
     "rating" INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 4),
     "state_before" TEXT NOT NULL,
     "state_after" TEXT NOT NULL,
@@ -188,101 +185,270 @@ CREATE TABLE IF NOT EXISTS "public"."review_logs" (
 );
 
 -- ============================================
--- 5. Indexes (Optimized)
--- ============================================
-CREATE INDEX IF NOT EXISTS "idx_vocab_books_user" ON "public"."vocabulary_books" ("user_id");
-CREATE INDEX IF NOT EXISTS "idx_vocab_books_sys" ON "public"."vocabulary_books" ("is_system_book");
-
-CREATE INDEX IF NOT EXISTS "idx_vocab_words_book" ON "public"."vocabulary_words" ("book_id");
-CREATE INDEX IF NOT EXISTS "idx_vocab_words_details" ON "public"."vocabulary_words" USING GIN ("word_details");
-
-CREATE INDEX IF NOT EXISTS "idx_ubp_user_book" ON "public"."user_book_progress" ("user_id", "book_id");
-
--- Critical Index for FSRS Queries
-CREATE INDEX IF NOT EXISTS "idx_uwp_user_book_state" ON "public"."user_word_progress" ("user_id", "book_id", "state");
-CREATE INDEX IF NOT EXISTS "idx_uwp_due_query" ON "public"."user_word_progress" ("user_id", "book_id", "due_at");
-
-CREATE INDEX IF NOT EXISTS "idx_review_logs_user" ON "public"."review_logs" ("user_id");
-
--- ============================================
--- 6. Row Level Security (RLS) - FIXED
+-- 5. Indexes
 -- ============================================
 
--- Enable RLS on all tables
-ALTER TABLE "public"."vocabulary_books" ENABLE ROW LEVEL SECURITY;
+-- Vocabulary Words (Global)
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_word" ON "public"."vocabulary_words" ("word");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_word_details" ON "public"."vocabulary_words" USING GIN ("word_details");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_pending_by_created" ON "public"."vocabulary_words" ("created_at") WHERE import_status = 'pending';
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_importing_by_updated" ON "public"."vocabulary_words" ("updated_at") WHERE import_status = 'importing';
+
+-- Vocabulary Books
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_books_user_id" ON "public"."vocabulary_books" ("user_id");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_books_is_system_book" ON "public"."vocabulary_books" ("is_system_book");
+
+-- Book Words Junction
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_book_words_book_id" ON "public"."vocabulary_book_words" ("book_id");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_book_words_word_id" ON "public"."vocabulary_book_words" ("word_id");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_book_words_book_sort" ON "public"."vocabulary_book_words" ("book_id", "sort_order");
+
+-- User Progress
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_user_book_progress_user_book" ON "public"."vocabulary_user_book_progress" ("user_id", "book_id");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_user_word_progress_user_book_state" ON "public"."vocabulary_user_word_progress" ("user_id", "book_id", "state");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_user_word_progress_due_query" ON "public"."vocabulary_user_word_progress" ("user_id", "book_id", "due_at");
+
+-- Review Logs
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_review_logs_user_id" ON "public"."vocabulary_review_logs" ("user_id");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_review_logs_user_book_reviewed" ON "public"."vocabulary_review_logs" ("user_id", "book_id", "reviewed_at" DESC);
+
+-- ============================================
+-- 6. Row Level Security (RLS)
+-- ============================================
+
 ALTER TABLE "public"."vocabulary_words" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "public"."user_book_progress" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "public"."user_word_progress" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "public"."book_settings" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."vocabulary_books" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."vocabulary_book_words" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."vocabulary_user_book_progress" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."vocabulary_user_word_progress" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."vocabulary_book_settings" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."user_settings" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "public"."review_logs" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "public"."app_settings" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."vocabulary_review_logs" ENABLE ROW LEVEL SECURITY;
 
--- 6.1 Vocabulary Books Policies
-CREATE POLICY "Public read access for system books" ON "public"."vocabulary_books"
-    FOR SELECT USING (is_system_book = true);
+-- 6.1 Vocabulary Words (Global - readable by all authenticated users)
+CREATE POLICY "Allow read all words" ON "public"."vocabulary_words"
+    FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY "Users can manage own books" ON "public"."vocabulary_books"
-    USING (auth.uid() = user_id); -- Covers Select, Insert, Update, Delete
+CREATE POLICY "Allow anon read completed words" ON "public"."vocabulary_words"
+    FOR SELECT TO anon USING (import_status = 'done');
 
--- 6.2 Vocabulary Words Policies
--- Note: Simplified to avoid complex nested EXISTS calls where possible
-CREATE POLICY "Read system words" ON "public"."vocabulary_words"
-    FOR SELECT USING (
-        EXISTS (SELECT 1 FROM "public"."vocabulary_books" vb WHERE vb.id = book_id AND vb.is_system_book = true)
-    );
-
-CREATE POLICY "Manage own book words" ON "public"."vocabulary_words"
-    USING (
-        EXISTS (SELECT 1 FROM "public"."vocabulary_books" vb WHERE vb.id = book_id AND vb.user_id = auth.uid())
-    );
-
--- 6.3 User Progress & Settings (Simple Ownership)
-CREATE POLICY "Manage own book progress" ON "public"."user_book_progress" USING (auth.uid() = user_id);
-CREATE POLICY "Manage own word progress" ON "public"."user_word_progress" USING (auth.uid() = user_id);
-CREATE POLICY "Manage own book settings" ON "public"."book_settings" USING (auth.uid() = user_id);
-CREATE POLICY "Manage own user settings" ON "public"."user_settings" USING (auth.uid() = user_id);
-CREATE POLICY "Manage own review logs" ON "public"."review_logs" USING (auth.uid() = user_id);
-
--- 6.4 App Settings (SECURITY CRITICAL FIX)
--- Only service_role can read/write app_settings (contains API keys)
--- Regular users (anon/authenticated) get NO ACCESS.
-CREATE POLICY "Service role full access" ON "public"."app_settings"
+CREATE POLICY "Allow service role manage words" ON "public"."vocabulary_words"
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+-- 6.2 Vocabulary Books
+CREATE POLICY "Allow read system books" ON "public"."vocabulary_books"
+    FOR SELECT TO authenticated, anon USING (is_system_book = true);
+
+CREATE POLICY "Allow manage own books" ON "public"."vocabulary_books"
+    FOR ALL TO authenticated
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+-- 6.3 Book Words Junction
+CREATE POLICY "Allow read book words" ON "public"."vocabulary_book_words"
+    FOR SELECT TO authenticated, anon USING (
+        EXISTS (
+            SELECT 1 FROM "public"."vocabulary_books" vb 
+            WHERE vb.id = book_id 
+            AND (vb.is_system_book = true OR vb.user_id = auth.uid())
+        )
+    );
+
+CREATE POLICY "Allow manage own book words" ON "public"."vocabulary_book_words"
+    FOR ALL TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM "public"."vocabulary_books" vb 
+            WHERE vb.id = book_id 
+            AND vb.user_id = auth.uid()
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM "public"."vocabulary_books" vb 
+            WHERE vb.id = book_id 
+            AND vb.user_id = auth.uid()
+        )
+    );
+
+-- 6.4 User Progress & Settings
+CREATE POLICY "Allow manage own book progress" ON "public"."vocabulary_user_book_progress"
+    FOR ALL TO authenticated
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Allow manage own word progress" ON "public"."vocabulary_user_word_progress"
+    FOR ALL TO authenticated
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Allow manage own book settings" ON "public"."vocabulary_book_settings"
+    FOR ALL TO authenticated
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Allow manage own user settings" ON "public"."user_settings"
+    FOR ALL TO authenticated
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Allow manage own review logs" ON "public"."vocabulary_review_logs"
+    FOR ALL TO authenticated
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
 -- ============================================
--- 7. Logic Functions & Triggers
+-- 7. Triggers
 -- ============================================
 
--- 7.1 Auto-update updated_at
-CREATE TRIGGER "update_vocabulary_books_timestamp" BEFORE UPDATE ON "public"."vocabulary_books" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+DROP TRIGGER IF EXISTS "update_vocabulary_words_timestamp" ON "public"."vocabulary_words";
 CREATE TRIGGER "update_vocabulary_words_timestamp" BEFORE UPDATE ON "public"."vocabulary_words" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-CREATE TRIGGER "update_user_book_progress_timestamp" BEFORE UPDATE ON "public"."user_book_progress" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-CREATE TRIGGER "update_user_word_progress_timestamp" BEFORE UPDATE ON "public"."user_word_progress" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-CREATE TRIGGER "update_book_settings_timestamp" BEFORE UPDATE ON "public"."book_settings" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-CREATE TRIGGER "update_user_settings_timestamp" BEFORE UPDATE ON "public"."user_settings" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-CREATE TRIGGER "update_app_settings_timestamp" BEFORE UPDATE ON "public"."app_settings" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
--- 7.2 Efficient Book Stats Update (Refactored)
+DROP TRIGGER IF EXISTS "update_vocabulary_books_timestamp" ON "public"."vocabulary_books";
+CREATE TRIGGER "update_vocabulary_books_timestamp" BEFORE UPDATE ON "public"."vocabulary_books" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+DROP TRIGGER IF EXISTS "update_vocabulary_user_book_progress_timestamp" ON "public"."vocabulary_user_book_progress";
+CREATE TRIGGER "update_vocabulary_user_book_progress_timestamp" BEFORE UPDATE ON "public"."vocabulary_user_book_progress" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+DROP TRIGGER IF EXISTS "update_vocabulary_user_word_progress_timestamp" ON "public"."vocabulary_user_word_progress";
+CREATE TRIGGER "update_vocabulary_user_word_progress_timestamp" BEFORE UPDATE ON "public"."vocabulary_user_word_progress" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+DROP TRIGGER IF EXISTS "update_vocabulary_book_settings_timestamp" ON "public"."vocabulary_book_settings";
+CREATE TRIGGER "update_vocabulary_book_settings_timestamp" BEFORE UPDATE ON "public"."vocabulary_book_settings" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+DROP TRIGGER IF EXISTS "update_user_settings_timestamp" ON "public"."user_settings";
+CREATE TRIGGER "update_user_settings_timestamp" BEFORE UPDATE ON "public"."user_settings" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+-- ============================================
+-- 8. Business Logic Functions
+-- ============================================
+
+-- 8.1 Add Word to Book (Creates global word if not exists, links to book)
+CREATE OR REPLACE FUNCTION "public"."add_word_to_book"(
+    p_book_id UUID,
+    p_word VARCHAR(200),
+    p_sort_order INTEGER DEFAULT 0,
+    p_notes TEXT DEFAULT NULL
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_word_id UUID;
+BEGIN
+    INSERT INTO vocabulary_words (word)
+    VALUES (LOWER(TRIM(p_word)))
+    ON CONFLICT (word) DO UPDATE SET word = EXCLUDED.word
+    RETURNING id INTO v_word_id;
+
+    INSERT INTO vocabulary_book_words (book_id, word_id, sort_order, notes)
+    VALUES (p_book_id, v_word_id, p_sort_order, p_notes)
+    ON CONFLICT (book_id, word_id) DO UPDATE SET
+        sort_order = EXCLUDED.sort_order,
+        notes = COALESCE(EXCLUDED.notes, vocabulary_book_words.notes);
+
+    RETURN v_word_id;
+END;
+$$;
+
+-- 8.2 Bulk Add Words to Book
+CREATE OR REPLACE FUNCTION "public"."add_words_to_book"(
+    p_book_id UUID,
+    p_words TEXT[]
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_count INTEGER := 0;
+    v_word TEXT;
+    v_sort INTEGER := 0;
+BEGIN
+    FOREACH v_word IN ARRAY p_words
+    LOOP
+        PERFORM add_word_to_book(p_book_id, v_word, v_sort);
+        v_sort := v_sort + 1;
+        v_count := v_count + 1;
+    END LOOP;
+    
+    UPDATE vocabulary_books SET word_count = (
+        SELECT COUNT(*) FROM vocabulary_book_words WHERE book_id = p_book_id
+    ) WHERE id = p_book_id;
+    
+    RETURN v_count;
+END;
+$$;
+
+-- 8.3 Update Book Word Count Trigger
+CREATE OR REPLACE FUNCTION "public"."update_book_word_count"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_book_id UUID;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        v_book_id := OLD.book_id;
+    ELSE
+        v_book_id := NEW.book_id;
+    END IF;
+
+    UPDATE vocabulary_books SET word_count = (
+        SELECT COUNT(*) FROM vocabulary_book_words WHERE book_id = v_book_id
+    ) WHERE id = v_book_id;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS "trg_update_book_word_count" ON "public"."vocabulary_book_words";
+CREATE TRIGGER "trg_update_book_word_count"
+    AFTER INSERT OR DELETE ON "public"."vocabulary_book_words"
+    FOR EACH ROW
+    EXECUTE FUNCTION "public"."update_book_word_count"();
+
+-- 8.4 Book Progress Stats Update
 CREATE OR REPLACE FUNCTION "public"."update_book_progress_stats"()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql 
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
     v_mastered INT;
     v_learning INT;
     v_new INT;
+    v_user_id UUID;
+    v_book_id UUID;
 BEGIN
-    -- Perform a single aggregate query instead of 3 separate COUNT(*)
+    IF TG_OP = 'DELETE' THEN
+        v_user_id := OLD.user_id;
+        v_book_id := OLD.book_id;
+    ELSE
+        v_user_id := NEW.user_id;
+        v_book_id := NEW.book_id;
+    END IF;
+
     SELECT
         COUNT(*) FILTER (WHERE state = 'review' AND stability > 21),
         COUNT(*) FILTER (WHERE state IN ('learning', 'relearning') OR (state = 'review' AND stability <= 21)),
         COUNT(*) FILTER (WHERE state = 'new')
     INTO v_mastered, v_learning, v_new
-    FROM user_word_progress
-    WHERE user_id = NEW.user_id AND book_id = NEW.book_id;
+    FROM vocabulary_user_word_progress
+    WHERE user_id = v_user_id AND book_id = v_book_id;
 
-    -- Upsert the stats
-    INSERT INTO user_book_progress (user_id, book_id, mastered_count, learning_count, new_count, updated_at)
-    VALUES (NEW.user_id, NEW.book_id, v_mastered, v_learning, v_new, NOW())
+    INSERT INTO vocabulary_user_book_progress (user_id, book_id, mastered_count, learning_count, new_count, updated_at)
+    VALUES (v_user_id, v_book_id, v_mastered, v_learning, v_new, NOW())
     ON CONFLICT (user_id, book_id)
     DO UPDATE SET
         mastered_count = EXCLUDED.mastered_count,
@@ -290,16 +456,21 @@ BEGIN
         new_count = EXCLUDED.new_count,
         updated_at = NOW();
 
-    RETURN NEW;
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    ELSE
+        RETURN NEW;
+    END IF;
 END;
 $$;
 
-CREATE OR REPLACE TRIGGER "trg_update_book_stats"
-    AFTER INSERT OR UPDATE OF state, stability ON "public"."user_word_progress"
+DROP TRIGGER IF EXISTS "trg_update_book_stats" ON "public"."vocabulary_user_word_progress";
+CREATE TRIGGER "trg_update_book_stats"
+    AFTER INSERT OR UPDATE OF state, stability OR DELETE ON "public"."vocabulary_user_word_progress"
     FOR EACH ROW
     EXECUTE FUNCTION "public"."update_book_progress_stats"();
 
--- 7.3 Get Due Cards (FSRS Optimized)
+-- 8.5 Get Due Cards (FSRS)
 CREATE OR REPLACE FUNCTION "public"."get_due_cards_with_fuzz"(
     p_user_id UUID,
     p_book_id UUID,
@@ -312,7 +483,11 @@ RETURNS TABLE (
     due_at TIMESTAMPTZ,
     is_learning_phase BOOLEAN
 )
-LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+LANGUAGE plpgsql 
+STABLE 
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
     RETURN QUERY
     SELECT
@@ -321,93 +496,245 @@ BEGIN
         uwp.state,
         uwp.due_at,
         uwp.is_learning_phase
-    FROM user_word_progress uwp
+    FROM vocabulary_user_word_progress uwp
     WHERE uwp.user_id = p_user_id
         AND uwp.book_id = p_book_id
         AND uwp.due_at <= NOW()
     ORDER BY
-        -- Prioritize learning phase, then shuffle slightly to prevent stuck cards
         uwp.is_learning_phase DESC,
         uwp.due_at + (random() * interval '5 minutes') ASC
     LIMIT p_limit;
 END;
 $$;
 
--- ============================================
--- 8. Background Jobs (pg_cron & pg_net)
--- ============================================
-
-CREATE OR REPLACE FUNCTION "public"."process_pending_vocabulary_words"()
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE
-    supabase_url TEXT;
-    service_role_key TEXT;
-    function_url TEXT;
-    request_id BIGINT;
+-- 8.6 Get Book Words with Details
+CREATE OR REPLACE FUNCTION "public"."get_book_words"(
+    p_book_id UUID,
+    p_limit INTEGER DEFAULT 100,
+    p_offset INTEGER DEFAULT 0
+)
+RETURNS TABLE (
+    word_id UUID,
+    word VARCHAR(200),
+    phonetic VARCHAR(200),
+    definition TEXT,
+    example_sentence TEXT,
+    word_details JSONB,
+    word_audio_url TEXT,
+    import_status public.import_status_enum,
+    sort_order INTEGER,
+    notes TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
-    -- Check if pg_net exists to avoid runtime crash
-    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
-        RAISE WARNING 'pg_net extension not installed.';
-        RETURN;
-    END IF;
-
-    -- Securely fetch credentials
-    SELECT value INTO supabase_url FROM public.app_settings WHERE key = 'supabase_url';
-    SELECT value INTO service_role_key FROM public.app_settings WHERE key = 'service_role_key';
-
-    IF supabase_url IS NULL OR service_role_key IS NULL THEN
-        RAISE WARNING 'Missing Supabase URL or Service Role Key in app_settings.';
-        RETURN;
-    END IF;
-
-    function_url := supabase_url || '/functions/v1/vocabulary-process-pending-words';
-
-    -- Call Edge Function
-    SELECT net.http_post(
-        url := function_url,
-        headers := jsonb_build_object(
-            'Content-Type', 'application/json',
-            'Authorization', 'Bearer ' || service_role_key
-        ),
-        body := '{}'::jsonb
-    ) INTO request_id;
+    RETURN QUERY
+    SELECT
+        vw.id AS word_id,
+        vw.word,
+        vw.phonetic,
+        vw.definition,
+        vw.example_sentence,
+        vw.word_details,
+        vw.word_audio_url,
+        vw.import_status,
+        bw.sort_order,
+        bw.notes
+    FROM vocabulary_book_words bw
+    JOIN vocabulary_words vw ON vw.id = bw.word_id
+    WHERE bw.book_id = p_book_id
+    ORDER BY bw.sort_order
+    LIMIT p_limit
+    OFFSET p_offset;
 END;
 $$;
 
--- Schedule Cron Job (Safe handling)
+-- ============================================
+-- 9. Task Scheduling System
+-- ============================================
+
+-- 9.1 Atomic Task Claiming Function
+CREATE OR REPLACE FUNCTION "public"."claim_pending_vocabulary_words"(
+    batch_size INT,
+    instance_id TEXT
+)
+RETURNS SETOF "public"."vocabulary_words"
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    UPDATE "public"."vocabulary_words"
+    SET 
+        import_status = 'importing',
+        locked_by = instance_id,
+        updated_at = NOW()
+    WHERE id IN (
+        SELECT id FROM "public"."vocabulary_words"
+        WHERE import_status = 'pending'
+        ORDER BY created_at
+        LIMIT batch_size
+        FOR UPDATE SKIP LOCKED
+    )
+    RETURNING *;
+$$;
+
+-- 9.2 Edge Function Trigger
+CREATE OR REPLACE FUNCTION "public"."trigger_vocabulary_process"()
+RETURNS TRIGGER 
+LANGUAGE plpgsql 
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    pending_exists BOOLEAN;
+BEGIN
+    SELECT EXISTS(
+        SELECT 1 FROM "public"."vocabulary_words" 
+        WHERE import_status = 'pending' 
+        LIMIT 1
+    ) INTO pending_exists;
+
+    IF NOT pending_exists THEN
+        RETURN NULL;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
+        RAISE NOTICE 'pg_net not available, skipping trigger';
+        RETURN NULL;
+    END IF;
+
+    PERFORM net.http_post(
+        url := '/functions/v1/vocabulary-process-pending-words',
+        headers := jsonb_build_object(
+            'Content-Type', 'application/json',
+            'Authorization', 'Bearer ' || "test_service_role_key"
+        ),
+        body := jsonb_build_object('source', 'trigger')
+    );
+
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS "on_vocabulary_words_pending_insert" ON "public"."vocabulary_words";
+CREATE TRIGGER "on_vocabulary_words_pending_insert"
+    AFTER INSERT ON "public"."vocabulary_words"
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION "public"."trigger_vocabulary_process"();
+
+-- 9.3 Cron Failsafe Function
+CREATE OR REPLACE FUNCTION "public"."process_pending_vocabulary_words"()
+RETURNS void 
+LANGUAGE plpgsql 
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    pending_exists BOOLEAN;
+BEGIN
+    SELECT EXISTS(
+        SELECT 1 FROM "public"."vocabulary_words" 
+        WHERE import_status = 'pending' 
+        LIMIT 1
+    ) INTO pending_exists;
+
+    IF NOT pending_exists THEN
+        RETURN;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
+        RAISE NOTICE 'pg_net extension not installed.';
+        RETURN;
+    END IF;
+
+    PERFORM net.http_post(
+        url := '/functions/v1/vocabulary-process-pending-words',
+        headers := jsonb_build_object(
+            'Content-Type', 'application/json',
+            'Authorization', 'Bearer ' || "test_service_role_key"
+        ),
+        body := jsonb_build_object('source', 'cron_failsafe')
+    );
+END;
+$$;
+
+-- 9.4 Stuck Task Recovery Function
+CREATE OR REPLACE FUNCTION "public"."recover_stuck_vocabulary_words"()
+RETURNS void 
+LANGUAGE plpgsql 
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    recovered_count INT;
+BEGIN
+    WITH recovered AS (
+        UPDATE "public"."vocabulary_words"
+        SET 
+            import_status = 'pending',
+            locked_by = NULL
+        WHERE import_status = 'importing'
+            AND updated_at < NOW() - INTERVAL '3 minutes'
+        RETURNING id
+    )
+    SELECT COUNT(*) INTO recovered_count FROM recovered;
+
+    IF recovered_count > 0 THEN
+        RAISE NOTICE 'Recovered % stuck tasks', recovered_count;
+    END IF;
+END;
+$$;
+
+-- ============================================
+-- 10. Cron Jobs (pg_cron)
+-- ============================================
+
 DO $$
 BEGIN
-    -- 检查 pg_cron 扩展是否安装
     IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-        -- 先尝试取消旧任务，避免重复
-        PERFORM cron.unschedule('process-pending-vocabulary-words');
-        
-        -- 重新调度任务
+        BEGIN PERFORM cron.unschedule('process-pending-vocabulary-words'); EXCEPTION WHEN OTHERS THEN NULL; END;
+        BEGIN PERFORM cron.unschedule('recover-stuck-vocabulary-words'); EXCEPTION WHEN OTHERS THEN NULL; END;
+
         PERFORM cron.schedule(
-            'process-pending-vocabulary-words', -- 任务名称
-            '*/1 * * * *',                      -- Cron 表达式 (每分钟)
-            'SELECT public.process_pending_vocabulary_words()' -- 改为单引号
+            'process-pending-vocabulary-words',
+            '*/1 * * * *',
+            'SELECT public.process_pending_vocabulary_words()'
         );
+
+        PERFORM cron.schedule(
+            'recover-stuck-vocabulary-words',
+            '*/5 * * * *',
+            'SELECT public.recover_stuck_vocabulary_words()'
+        );
+
+        RAISE NOTICE 'Cron jobs scheduled successfully';
+    ELSE
+        RAISE NOTICE 'pg_cron not available, skipping cron job setup';
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    -- 捕获错误，防止因为 cron 权限问题导致整个脚本运行失败
-    RAISE NOTICE 'Failed to schedule cron job: %', SQLERRM;
+    RAISE NOTICE 'Failed to schedule cron jobs: %', SQLERRM;
 END $$;
 
 -- ============================================
--- 9. Permissions
+-- 11. Permissions
 -- ============================================
 
 GRANT USAGE ON SCHEMA "public" TO "anon", "authenticated", "service_role";
 
--- Default table access (Restricted by RLS)
 GRANT ALL ON ALL TABLES IN SCHEMA "public" TO "authenticated", "service_role";
 
--- WARNING: Do not grant ALL to anon blindly.
--- Only grant access to specific functions or tables if absolutely necessary.
-GRANT SELECT ON "public"."vocabulary_books" TO "anon"; -- Needed if you have public landing pages
+GRANT SELECT ON "public"."vocabulary_books" TO "anon";
 GRANT SELECT ON "public"."vocabulary_words" TO "anon";
+GRANT SELECT ON "public"."vocabulary_book_words" TO "anon";
 
--- Function Permissions
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA "public" TO "authenticated", "service_role";
+GRANT EXECUTE ON FUNCTION "public"."add_word_to_book" TO "authenticated";
+GRANT EXECUTE ON FUNCTION "public"."add_words_to_book" TO "authenticated";
+GRANT EXECUTE ON FUNCTION "public"."get_book_words" TO "authenticated", "anon";
 GRANT EXECUTE ON FUNCTION "public"."get_due_cards_with_fuzz" TO "authenticated", "service_role";
+GRANT EXECUTE ON FUNCTION "public"."claim_pending_vocabulary_words" TO "service_role";
+GRANT EXECUTE ON FUNCTION "public"."process_pending_vocabulary_words" TO "service_role";
+GRANT EXECUTE ON FUNCTION "public"."recover_stuck_vocabulary_words" TO "service_role";
