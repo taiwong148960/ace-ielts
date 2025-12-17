@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
 
     // Get recent reviews with word information
     const { data: reviews, error } = await supabaseAdmin
-      .from("review_logs")
+      .from("vocabulary_review_logs")
       .select("id, word_id, book_id, reviewed_at")
       .eq("user_id", user.id)
       .order("reviewed_at", { ascending: false })

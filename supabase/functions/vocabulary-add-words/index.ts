@@ -55,45 +55,36 @@ Deno.serve(async (req) => {
     }
 
     // Filter and clean words
-    const wordsToInsert = input.words
+    const cleanedWords = input.words
       .map(word => typeof word === "string" ? word.trim() : "")
       .filter(word => word.length > 0)
-      .map(word => ({
-        book_id: input.bookId,
-        word: word
-      }))
 
-    if (wordsToInsert.length === 0) {
+    if (cleanedWords.length === 0) {
       return errorResponse("No valid words provided", 400)
     }
 
-    // Insert words
-    const { data: insertedWords, error: insertError } = await supabaseAdmin
-      .from("vocabulary_words")
-      .insert(wordsToInsert)
-      .select()
+    // Insert words using RPC
+    const { data: processedCount, error: insertError } = await supabaseAdmin
+      .rpc("add_words_to_book", {
+        p_book_id: input.bookId,
+        p_words: cleanedWords
+      })
 
     if (insertError) {
-      logger.error("Failed to add words", { bookId: input.bookId, userId: user.id, wordCount: wordsToInsert.length }, new Error(insertError.message))
+      logger.error("Failed to add words", { bookId: input.bookId, userId: user.id, wordCount: cleanedWords.length }, new Error(insertError.message))
       return errorResponse("Failed to add words", 500)
     }
 
-    // Update word count in the book
-    const { count } = await supabaseAdmin
-      .from("vocabulary_words")
-      .select("*", { count: "exact", head: true })
-      .eq("book_id", input.bookId)
-
-    if (count !== null) {
-      await supabaseAdmin
-        .from("vocabulary_books")
-        .update({ word_count: count })
-        .eq("id", input.bookId)
-    }
+    // Get updated word count
+    const { data: book } = await supabaseAdmin
+      .from("vocabulary_books")
+      .select("word_count")
+      .eq("id", input.bookId)
+      .single()
 
     return successResponse({
-      words: insertedWords,
-      wordCount: count
+      words: [], // RPC doesn't return word objects
+      wordCount: book?.word_count || 0
     })
   } catch (error) {
     logger.error("Edge function error", {}, error as Error)

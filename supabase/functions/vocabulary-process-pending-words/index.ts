@@ -171,57 +171,57 @@ async function enrichWord(
 
   // Construct prompt
   const prompt = `You are an expert English vocabulary teacher specializing in IELTS preparation. 
-
-Analyze the word "${word}" and provide comprehensive information in JSON format. The response must be valid JSON only, no additional text.
-
-Required structure:
-{
-  "definitions": [
-    {
-      "partOfSpeech": "noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection",
-      "meaning": "Clear, concise definition"
-    }
-  ],
-  "exampleSentences": [
-    {
-      "sentence": "Example sentence using the word",
-      "source": "ielts|daily|movie|tv",
-      "translation": "Chinese translation (optional)"
-    }
-  ],
-  "synonyms": ["word1", "word2"],
-  "antonyms": ["word1", "word2"],
-  "relatedWords": {
-    "baseForm": "base form if applicable",
-    "comparative": "comparative form if adjective/adverb",
-    "superlative": "superlative form if adjective/adverb",
-    "pastTense": "past tense if verb",
-    "pastParticiple": "past participle if verb",
-    "presentParticiple": "present participle if verb",
-    "plural": "plural form if noun"
-  },
-  "easilyConfused": ["word1", "word2"],
-  "usageFrequency": "common|uncommon|rare",
-  "tenses": ["tense1", "tense2"] // Only for verbs
-}
-
-Requirements:
-1. Provide ALL definitions with their parts of speech
-2. Provide EXACTLY 10 example sentences:
-   - 3-4 from IELTS exam contexts (academic, formal)
-   - 3-4 from daily life contexts (casual, conversational)
-   - 2-3 from movies or TV shows (with source name if possible)
-   - Each sentence must clearly show the word's usage
-   - Mark the source for each sentence
-3. Include synonyms and antonyms if available
-4. Include all related word forms (inflections, tenses, etc.)
-5. List easily confused words (words that are commonly mistaken for this word)
-6. Indicate usage frequency
-7. For verbs, list all applicable tenses
-
-Word to analyze: "${word}"
-
-Return ONLY valid JSON, no markdown formatting, no code blocks.`
+  
+  Analyze the word "${word}" and provide comprehensive information in JSON format. The response must be valid JSON only, no additional text.
+  
+  Required structure:
+  {
+    "definitions": [
+      {
+        "partOfSpeech": "noun|verb|adjective|adverb|preposition|conjunction|pronoun|interjection",
+        "meaning": "Clear, concise definition"
+      }
+    ],
+    "exampleSentences": [
+      {
+        "sentence": "Example sentence using the word",
+        "source": "ielts|daily|movie|tv",
+        "translation": "Chinese translation (optional)"
+      }
+    ],
+    "synonyms": ["word1", "word2"],
+    "antonyms": ["word1", "word2"],
+    "relatedWords": {
+      "baseForm": "base form if applicable",
+      "comparative": "comparative form if adjective/adverb",
+      "superlative": "superlative form if adjective/adverb",
+      "pastTense": "past tense if verb",
+      "pastParticiple": "past participle if verb",
+      "presentParticiple": "present participle if verb",
+      "plural": "plural form if noun"
+    },
+    "easilyConfused": ["word1", "word2"],
+    "usageFrequency": "common|uncommon|rare",
+    "tenses": ["tense1", "tense2"] // Only for verbs
+  }
+  
+  Requirements:
+  1. Provide ALL definitions with their parts of speech
+  2. Provide EXACTLY 10 example sentences:
+     - 3-4 from IELTS exam contexts (academic, formal)
+     - 3-4 from daily life contexts (casual, conversational)
+     - 2-3 from movies or TV shows (with source name if possible)
+     - Each sentence must clearly show the word's usage
+     - Mark the source for each sentence
+  3. Include synonyms and antonyms if available
+  4. Include all related word forms (inflections, tenses, etc.)
+  5. List easily confused words (words that are commonly mistaken for this word)
+  6. Indicate usage frequency
+  7. For verbs, list all applicable tenses
+  
+  Word to analyze: "${word}"
+  
+  Return ONLY valid JSON, no markdown formatting, no code blocks.`
 
   // Call Gemini API
   const url = `${DEFAULT_BASE_URL}/models/${model}:generateContent?key=${geminiApiKey}`
@@ -324,7 +324,7 @@ Deno.serve(async (req) => {
     // Get pending or importing words (limit to batch size)
     const { data: words, error: wordsError } = await supabaseAdmin
       .from("vocabulary_words")
-      .select("id, word, book_id, import_status")
+      .select("id, word, import_status")
       .in("import_status", ["pending", "importing"])
       .order("created_at", { ascending: true })
       .limit(BATCH_SIZE)
@@ -351,63 +351,84 @@ Deno.serve(async (req) => {
     // Process each word
     for (const wordRecord of words) {
       try {
-        // Get book to find user_id
-        const { data: book, error: bookError } = await supabaseAdmin
-          .from("vocabulary_books")
-          .select("id, user_id, import_progress, import_total, import_status")
-          .eq("id", wordRecord.book_id)
+        // Find a book that uses this word to get user settings (API key)
+        const { data: bookWord, error: bookWordError } = await supabaseAdmin
+          .from("vocabulary_book_words")
+          .select("book_id, vocabulary_books!inner(id, user_id)")
+          .eq("word_id", wordRecord.id)
+          .limit(1)
           .single()
 
-        if (bookError || !book) {
-          logger.error("Failed to fetch book", { bookId: wordRecord.book_id }, new Error(bookError?.message || "Book not found"))
-          // Skip this word if book not found
-          continue
+        if (bookWordError || !bookWord || !bookWord.vocabulary_books) {
+            // No book uses this word, or book deleted.
+            // Check if it's really orphan. If so, maybe we should skip it or mark as failed?
+            // But we can't enrich it without a user (API key).
+            logger.warn("No book/user found for word - skipping", { wordId: wordRecord.id })
+            continue
         }
 
-        // Skip if book is not in importing state
-        if (book.import_status !== "importing") {
-          logger.debug("Skipping word - book not importing", { bookId: book.id, wordId: wordRecord.id })
-          continue
-        }
-
+        const userId = (bookWord.vocabulary_books as any).user_id
+        
         // Enrich word
         const { wordData, wordAudioUrl, exampleAudioUrls } = await enrichWord(
           wordRecord.word,
-          book.user_id!,
+          userId,
           supabaseAdmin
         )
 
         // Update word with enriched data
-        await supabaseAdmin
+        const { error: updateError } = await supabaseAdmin
           .from("vocabulary_words")
           .update({
-            import_status: "completed",
+            import_status: "done",
             word_details: wordData,
             word_audio_url: wordAudioUrl,
             example_audio_urls: exampleAudioUrls
           })
           .eq("id", wordRecord.id)
 
-        // Update book progress
-        const newProgress = (book.import_progress || 0) + 1
-        const isComplete = newProgress >= (book.import_total || 0)
+        if (updateError) {
+            throw new Error(`Failed to update word: ${updateError.message}`)
+        }
 
-        await supabaseAdmin
-          .from("vocabulary_books")
-          .update({
-            import_progress: newProgress,
-            import_status: isComplete ? "completed" : "importing",
-            import_completed_at: isComplete ? new Date().toISOString() : null
-          })
-          .eq("id", book.id)
+        // Find all books containing this word that are currently importing
+        // so we can update their status if all words are done
+        const { data: importingBooks } = await supabaseAdmin
+            .from("vocabulary_book_words")
+            .select("book_id, vocabulary_books!inner(id, import_status)")
+            .eq("word_id", wordRecord.id)
+            .eq("vocabulary_books.import_status", "importing")
+        
+        if (importingBooks) {
+            for (const b of importingBooks) {
+                const book = b.vocabulary_books as any
+                
+                // Check if all words in this book are done
+                // We count words that are NOT done
+                const { count, error: countError } = await supabaseAdmin
+                    .from("vocabulary_book_words")
+                    .select("word_id, vocabulary_words!inner(import_status)", { count: "exact", head: true })
+                    .eq("book_id", book.id)
+                    .neq("vocabulary_words.import_status", "done")
+                
+                if (!countError && count === 0) {
+                    // All words are done, mark book as done
+                    await supabaseAdmin
+                      .from("vocabulary_books")
+                      .update({
+                        import_status: "done"
+                      })
+                      .eq("id", book.id)
+                      
+                    logger.info("Book import completed", { bookId: book.id })
+                }
+            }
+        }
 
         processedCount++
         logger.info("Word processed successfully", { 
           wordId: wordRecord.id, 
-          word: wordRecord.word,
-          bookId: book.id,
-          progress: newProgress,
-          total: book.import_total
+          word: wordRecord.word
         })
 
       } catch (error) {

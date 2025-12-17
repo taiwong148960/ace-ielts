@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
 
     // Check if already exists
     const { data: existing } = await supabaseAdmin
-      .from("user_book_progress")
+      .from("vocabulary_user_book_progress")
       .select("*")
       .eq("user_id", user.id)
       .eq("book_id", input.bookId)
@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
 
     // Create progress
     const { data: progress, error } = await supabaseAdmin
-      .from("user_book_progress")
+      .from("vocabulary_user_book_progress")
       .insert({
         user_id: user.id,
         book_id: input.bookId,

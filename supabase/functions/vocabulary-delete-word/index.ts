@@ -50,11 +50,11 @@ Deno.serve(async (req) => {
       return errorResponse("You don't have permission to modify this book", 403)
     }
 
-    // Delete the word
+    // Delete the word link
     const { error } = await supabaseAdmin
-      .from("vocabulary_words")
+      .from("vocabulary_book_words")
       .delete()
-      .eq("id", input.wordId)
+      .eq("word_id", input.wordId)
       .eq("book_id", input.bookId)
 
     if (error) {
@@ -62,23 +62,17 @@ Deno.serve(async (req) => {
       return errorResponse("Failed to delete word", 500)
     }
 
-    // Update word count in the book
-    const { count } = await supabaseAdmin
-      .from("vocabulary_words")
-      .select("*", { count: "exact", head: true })
-      .eq("book_id", input.bookId)
-
-    if (count !== null) {
-      await supabaseAdmin
-        .from("vocabulary_books")
-        .update({ word_count: count })
-        .eq("id", input.bookId)
-    }
+    // Get updated word count
+    const { data: book } = await supabaseAdmin
+      .from("vocabulary_books")
+      .select("word_count")
+      .eq("id", input.bookId)
+      .single()
 
     return successResponse({
       deleted: true,
       wordId: input.wordId,
-      wordCount: count
+      wordCount: book?.word_count || 0
     })
   } catch (error) {
     logger.error("Edge function error", {}, error as Error)

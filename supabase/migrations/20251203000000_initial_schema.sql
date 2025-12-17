@@ -610,7 +610,7 @@ BEGIN
         url := '/functions/v1/vocabulary-process-pending-words',
         headers := jsonb_build_object(
             'Content-Type', 'application/json',
-            'Authorization', 'Bearer ' || "test_service_role_key"
+            'Authorization', 'Bearer ' || 'sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz'
         ),
         body := jsonb_build_object('source', 'trigger')
     );
@@ -654,7 +654,7 @@ BEGIN
         url := '/functions/v1/vocabulary-process-pending-words',
         headers := jsonb_build_object(
             'Content-Type', 'application/json',
-            'Authorization', 'Bearer ' || "test_service_role_key"
+            'Authorization', 'Bearer ' || 'sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz'
         ),
         body := jsonb_build_object('source', 'cron_failsafe')
     );

@@ -56,10 +56,7 @@ Deno.serve(async (req) => {
       is_system_book: false,
       user_id: user.id,
       word_count: cleanedWords.length,
-      import_status: cleanedWords.length > 0 ? "importing" : "completed",
-      import_progress: 0,
-      import_total: cleanedWords.length,
-      import_started_at: cleanedWords.length > 0 ? new Date().toISOString() : null
+      import_status: cleanedWords.length > 0 ? "importing" : "done"
     }
 
     const { data: book, error: bookError } = await supabaseAdmin
@@ -77,15 +74,11 @@ Deno.serve(async (req) => {
 
     // Add words to the book
     if (cleanedWords.length > 0) {
-      const wordsToInsert = cleanedWords.map(word => ({
-        book_id: book.id,
-        word: word,
-        import_status: "pending"
-      }))
-
       const { error: wordsError } = await supabaseAdmin
-        .from("vocabulary_words")
-        .insert(wordsToInsert)
+        .rpc("add_words_to_book", {
+          p_book_id: book.id,
+          p_words: cleanedWords
+        })
 
       if (wordsError) {
         logger.warn("Failed to add words to book", { bookId: book.id, wordCount: cleanedWords.length }, new Error(wordsError.message))
@@ -97,7 +90,7 @@ Deno.serve(async (req) => {
 
     // Initialize user book progress
     const { error: progressError } = await supabaseAdmin
-      .from("user_book_progress")
+      .from("vocabulary_user_book_progress")
       .insert({
         user_id: user.id,
         book_id: book.id,

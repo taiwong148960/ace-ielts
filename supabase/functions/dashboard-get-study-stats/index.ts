@@ -24,9 +24,9 @@ Deno.serve(async (req) => {
       req.headers.get("Authorization")
     )
 
-    // Get max streak from user_book_progress
+    // Get max streak from vocabulary_user_book_progress
     const { data: progressData, error: progressError } = await supabaseAdmin
-      .from("user_book_progress")
+      .from("vocabulary_user_book_progress")
       .select("streak_days")
       .eq("user_id", user.id)
 
@@ -38,13 +38,13 @@ Deno.serve(async (req) => {
       ? Math.max(...progressData.map(p => p.streak_days || 0))
       : 0
 
-    // Calculate today's study time from review_logs
+    // Calculate today's study time from vocabulary_review_logs
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const todayStart = today.toISOString()
 
     const { data: todayReviews, error: todayError } = await supabaseAdmin
-      .from("review_logs")
+      .from("vocabulary_review_logs")
       .select("review_time_ms")
       .eq("user_id", user.id)
       .gte("reviewed_at", todayStart)
@@ -59,9 +59,9 @@ Deno.serve(async (req) => {
         )
       : 0
 
-    // Calculate total study time from all review_logs
+    // Calculate total study time from all vocabulary_review_logs
     const { data: allReviews, error: allError } = await supabaseAdmin
-      .from("review_logs")
+      .from("vocabulary_review_logs")
       .select("review_time_ms")
       .eq("user_id", user.id)
 

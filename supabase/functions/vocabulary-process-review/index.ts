@@ -50,10 +50,11 @@ Deno.serve(async (req) => {
 
     // Get current progress or create new
     let { data: progress } = await supabaseAdmin
-      .from("user_word_progress")
+      .from("vocabulary_user_word_progress")
       .select("*")
       .eq("user_id", user.id)
       .eq("word_id", input.wordId)
+      .eq("book_id", input.bookId)
       .single()
 
     const isNew = !progress
@@ -62,7 +63,7 @@ Deno.serve(async (req) => {
       // Create initial progress
       const initial = createInitialWordProgress(user.id, input.wordId, input.bookId)
       const { data: newProgress, error } = await supabaseAdmin
-        .from("user_word_progress")
+        .from("vocabulary_user_word_progress")
         .insert(initial)
         .select()
         .single()
@@ -112,7 +113,7 @@ Deno.serve(async (req) => {
 
     // Update progress
     const { data: updatedProgress, error: updateError } = await supabaseAdmin
-      .from("user_word_progress")
+      .from("vocabulary_user_word_progress")
       .update(updateData)
       .eq("id", progress.id)
       .select()
@@ -133,7 +134,7 @@ Deno.serve(async (req) => {
     })
 
     // Log the review
-    await supabaseAdmin.from("review_logs").insert({
+    await supabaseAdmin.from("vocabulary_review_logs").insert({
       user_id: user.id,
       word_id: input.wordId,
       book_id: input.bookId,
@@ -184,7 +185,7 @@ async function updateBookProgressStats(
 
   // Get current book progress
   const { data: bookProgress } = await supabase
-    .from("user_book_progress")
+    .from("vocabulary_user_book_progress")
     .select("*")
     .eq("user_id", userId)
     .eq("book_id", bookId)
@@ -192,7 +193,7 @@ async function updateBookProgressStats(
 
   if (!bookProgress) {
     // Create book progress if doesn't exist
-    await supabase.from("user_book_progress").insert({
+    await supabase.from("vocabulary_user_book_progress").insert({
       user_id: userId,
       book_id: bookId,
       mastered_count: 0,
@@ -218,7 +219,7 @@ async function updateBookProgressStats(
 
   // Update counts
   await supabase
-    .from("user_book_progress")
+    .from("vocabulary_user_book_progress")
     .update({
       total_reviews: bookProgress.total_reviews + 1,
       reviews_today: isNewDay ? 1 : bookProgress.reviews_today + 1,

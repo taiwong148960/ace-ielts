@@ -53,9 +53,9 @@ Deno.serve(async (req) => {
         break
     }
 
-    // Count unique words viewed from review_logs
+    // Count unique words viewed from vocabulary_review_logs
     const { data: reviews, error } = await supabaseAdmin
-      .from("review_logs")
+      .from("vocabulary_review_logs")
       .select("word_id")
       .eq("user_id", user.id)
       .gte("reviewed_at", startDate.toISOString())

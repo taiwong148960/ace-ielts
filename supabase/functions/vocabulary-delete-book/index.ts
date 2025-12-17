@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
       return errorResponse("You don't have permission to delete this book", 403)
     }
 
-    // Delete will cascade to vocabulary_words, user_word_progress, user_book_progress
+    // Delete will cascade to vocabulary_book_words, vocabulary_user_word_progress, vocabulary_user_book_progress
     const { error } = await supabaseAdmin
       .from("vocabulary_books")
       .delete()

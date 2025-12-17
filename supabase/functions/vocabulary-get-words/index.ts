@@ -52,10 +52,9 @@ Deno.serve(async (req) => {
 
     // Get words
     const { data: words, error: wordsError } = await supabaseAdmin
-      .from("vocabulary_words")
-      .select("*")
-      .eq("book_id", input.bookId)
-      .order("word")
+      .rpc("get_book_words", {
+        p_book_id: input.bookId
+      })
 
     if (wordsError) {
       logger.error("Failed to fetch words", { bookId: input.bookId, userId: user.id }, new Error(wordsError.message))

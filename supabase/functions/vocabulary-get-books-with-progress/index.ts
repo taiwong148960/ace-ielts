@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
     // Get progress for all books
     const bookIds = books.map(b => b.id)
     const { data: progressData, error: progressError } = await supabaseAdmin
-      .from("user_book_progress")
+      .from("vocabulary_user_book_progress")
       .select("*")
       .eq("user_id", user.id)
       .in("book_id", bookIds)

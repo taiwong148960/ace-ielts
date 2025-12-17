@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
 
     // Check if settings exist
     const { data: existing } = await supabaseAdmin
-      .from("book_settings")
+      .from("vocabulary_book_settings")
       .select("id")
       .eq("user_id", user.id)
       .eq("book_id", input.bookId)
@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
     if (existing) {
       // Update existing settings
       const { data, error } = await supabaseAdmin
-        .from("book_settings")
+        .from("vocabulary_book_settings")
         .update(updateData)
         .eq("id", existing.id)
         .select()
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
     } else {
       // Create new settings
       const { data, error } = await supabaseAdmin
-        .from("book_settings")
+        .from("vocabulary_book_settings")
         .insert({
           user_id: user.id,
           book_id: input.bookId,

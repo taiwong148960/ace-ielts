@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
 
     // Get user progress
     const { data: progress } = await supabaseAdmin
-      .from("user_book_progress")
+      .from("vocabulary_user_book_progress")
       .select("*")
       .eq("user_id", user.id)
       .eq("book_id", input.bookId)
@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
 
     // Get word progress counts (only for completed words)
     const { data: progressData } = await supabaseAdmin
-      .from("user_word_progress")
+      .from("vocabulary_user_word_progress")
       .select(`
         state,
         stability,
@@ -83,14 +83,14 @@ Deno.serve(async (req) => {
       `)
       .eq("user_id", user.id)
       .eq("book_id", input.bookId)
-      .eq("vocabulary_words.import_status", "completed")
+      .eq("vocabulary_words.import_status", "done")
 
-    // Count only completed words
+    // Count only completed words (through vocabulary_book_words since vocabulary_words doesn't have book_id)
     const { count: totalCompletedWords } = await supabaseAdmin
-      .from("vocabulary_words")
-      .select("*", { count: "exact", head: true })
+      .from("vocabulary_book_words")
+      .select("word_id, vocabulary_words!inner(import_status)", { count: "exact", head: true })
       .eq("book_id", input.bookId)
-      .eq("import_status", "completed")
+      .eq("vocabulary_words.import_status", "done")
     
     const completedTotal = totalCompletedWords ?? 0
 
@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
 
     // Get book progress for accuracy and streak
     const { data: bookProgress } = await supabaseAdmin
-      .from("user_book_progress")
+      .from("vocabulary_user_book_progress")
       .select("accuracy_percent, streak_days, daily_new_limit")
       .eq("user_id", user.id)
       .eq("book_id", input.bookId)

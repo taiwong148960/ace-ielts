@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
 
     // Get words due for review (only completed words)
     const { data: dueProgress } = await supabaseAdmin
-      .from("user_word_progress")
+      .from("vocabulary_user_word_progress")
       .select(`
         id,
         word_id,
@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
       `)
       .eq("user_id", user.id)
       .eq("book_id", input.bookId)
-      .eq("vocabulary_words.import_status", "completed")
+      .eq("vocabulary_words.import_status", "done")
       .lte("due_at", now.toISOString())
       .order("due_at")
       .limit(reviewLimit)
@@ -95,21 +95,32 @@ Deno.serve(async (req) => {
     }))
 
     // Get new words (words without progress, only completed words)
-    const { data: allWords } = await supabaseAdmin
-      .from("vocabulary_words")
-      .select("id, word, phonetic, definition")
+    // Query through vocabulary_book_words since vocabulary_words doesn't have book_id
+    const { data: bookWordsData } = await supabaseAdmin
+      .from("vocabulary_book_words")
+      .select(`
+        word_id,
+        vocabulary_words!inner (
+          id,
+          word,
+          phonetic,
+          definition,
+          import_status
+        )
+      `)
       .eq("book_id", input.bookId)
-      .eq("import_status", "completed")
+      .eq("vocabulary_words.import_status", "done")
 
     const { data: existingProgress } = await supabaseAdmin
-      .from("user_word_progress")
+      .from("vocabulary_user_word_progress")
       .select("word_id")
       .eq("user_id", user.id)
       .eq("book_id", input.bookId)
 
     const existingWordIds = new Set((existingProgress || []).map((p: any) => p.word_id))
-    const newWordsData = (allWords || [])
-      .filter((w: any) => !existingWordIds.has(w.id))
+    const newWordsData = (bookWordsData || [])
+      .filter((bw: any) => !existingWordIds.has(bw.word_id))
+      .map((bw: any) => bw.vocabulary_words)
       .slice(0, newLimit)
 
     const newWords = newWordsData.map((w: any) => ({

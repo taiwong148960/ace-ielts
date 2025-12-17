@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
 
     // Get recent words
     const { data } = await supabaseAdmin
-      .from("user_word_progress")
+      .from("vocabulary_user_word_progress")
       .select(`
         word_id,
         state,
@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
       `)
       .eq("user_id", user.id)
       .eq("book_id", input.bookId)
-      .eq("vocabulary_words.import_status", "completed")
+      .eq("vocabulary_words.import_status", "done")
       .not("last_review_at", "is", null)
       .order("last_review_at", { ascending: false })
       .limit(limit)

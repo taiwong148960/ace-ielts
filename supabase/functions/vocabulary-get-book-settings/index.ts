@@ -23,7 +23,7 @@ interface GetBookSettingsRequest {
 const DEFAULT_SETTINGS = {
   daily_new_limit: 20,
   daily_review_limit: 100,
-  learning_mode: "meaning" as const,
+  learning_mode: "read_only" as const,
   study_order: "random" as const
 }
 
@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
 
     // Get book settings
     const { data: settings, error: settingsError } = await supabaseAdmin
-      .from("book_settings")
+      .from("vocabulary_book_settings")
       .select("*")
       .eq("user_id", user.id)
       .eq("book_id", input.bookId)
