@@ -1,0 +1,165 @@
+---
+alwaysApply: true
+---
+
+# Deployment
+
+## Infrastructure
+
+| Service | Provider |
+|---------|----------|
+| Code Hosting | GitHub |
+| Web Deployment | Vercel |
+| Desktop Build | Tauri |
+| Backend/Database | Supabase |
+
+---
+
+## Deployment Modes
+
+### SaaS Mode (Cloud-Hosted)
+- **Users:** End users wanting ready-to-use service
+- **Infrastructure:** Vercel + Supabase Cloud
+- **LLM API:** Platform-managed (subscription)
+- **Database:** Shared Supabase with RLS
+
+### Self-Hosted Mode (Open Source)
+- **Users:** Developers, enterprises, privacy-conscious users
+- **Infrastructure:** User's own servers
+- **LLM API:** User provides OpenAI-compatible key
+- **Database:** User's Supabase or local PostgreSQL
+
+---
+
+## Environments
+
+| Environment | URL | Purpose |
+|-------------|-----|---------|
+| Production | `https://www.ace-ielts.net` | Live service |
+| Development | `http://localhost:3000` | Local web |
+| Desktop Dev | `tauri dev` | Local desktop |
+
+---
+
+## Environment Variables
+
+### Required (All Modes)
+```env
+VITE_SUPABASE_URL=<supabase_project_url>
+VITE_SUPABASE_ANON_KEY=<supabase_anon_key>
+```
+
+### Mode Configuration
+```env
+# SaaS
+VITE_DEPLOYMENT_MODE=saas
+VITE_LLM_API_KEY=<platform_key>  # Server-side only
+
+# Self-Hosted
+VITE_DEPLOYMENT_MODE=self-hosted
+# LLM key configured via Settings UI
+```
+
+### Desktop Only
+```env
+TAURI_PRIVATE_KEY=<signing_key>
+TAURI_KEY_PASSWORD=<password>
+```
+
+### Usage in Code
+```typescript
+// packages/core/src/config/deployment.ts
+export type DeploymentMode = "saas" | "self-hosted"
+
+export function getDeploymentMode(): DeploymentMode {
+  return (import.meta.env.VITE_DEPLOYMENT_MODE as DeploymentMode) || "self-hosted"
+}
+
+export function isSaaSMode(): boolean {
+  return getDeploymentMode() === "saas"
+}
+```
+
+---
+
+## Deployment Workflow
+
+### GitHub → Vercel (Web)
+1. Push to `main` branch triggers auto-deployment
+2. PRs create preview deployments
+3. Build command: `pnpm build:web`
+
+**Vercel rules:**
+- Never hardcode secrets in frontend
+- Use `VITE_` prefix for client-side variables
+- Set Production Environment Variables in Vercel dashboard
+
+### Tauri (Desktop)
+```bash
+pnpm build:desktop      # Build
+pnpm package:desktop    # Package (.msi, .dmg, .deb, .AppImage)
+```
+
+**Platforms:** Windows (.msi/.exe), macOS (.dmg/.app), Linux (.deb/.AppImage)
+
+### Supabase
+
+**Auth CORS - Allowed Redirect URLs:**
+```
+http://localhost:3000/**
+https://www.ace-ielts.net/**
+tauri://localhost/**
+```
+
+**Migrations:**
+- Source of truth: `supabase/migrations/`
+- ❌ Do NOT make schema changes via Dashboard SQL Editor
+
+**Edge Functions:**
+```bash
+supabase functions serve <name>   # Local dev
+supabase functions deploy <name>  # Production
+```
+
+Secrets managed in Dashboard → Edge Functions → Secrets
+
+---
+
+## LLM API Configuration
+
+| Mode | Key Storage | Access |
+|------|-------------|--------|
+| SaaS | Supabase Secrets | Edge Functions read directly |
+| Self-Hosted | User settings table (encrypted) | Edge Functions read from DB |
+
+**SaaS:** Users never see API key  
+**Self-Hosted:** Settings UI for key input, stored encrypted
+
+---
+
+## Feature Flags
+
+```typescript
+if (isSaaSMode()) {
+  // Show subscription/billing
+} else {
+  // Show API key configuration
+}
+```
+
+---
+
+## Checklist
+
+### Before Deploying
+- [ ] `pnpm typecheck` passes
+- [ ] `pnpm lint` passes
+- [ ] Environment variables set in Vercel/Supabase
+- [ ] Database migrations applied
+- [ ] Edge Functions deployed
+
+### Desktop Release
+- [ ] Update version in `tauri.conf.json`
+- [ ] Test on all platforms
+- [ ] Sign binaries (macOS notarization, Windows signing)
+- [ ] Update auto-updater endpoint

@@ -2,471 +2,74 @@
 alwaysApply: true
 ---
 
-# Role & Context
-You are an expert Full-Stack Developer specialized in building the "AceIELTS" IELTS exam preparation application for Web and Desktop platforms.
+# Coding Standards
 
-# Tech Stack & Libraries
-- **Framework:** Vite (React 18+) for Web, Tauri for Desktop
-- **Desktop Runtime:** Tauri (Rust backend)
-- **Language:** TypeScript (Strict Mode)
-- **Styling:** Tailwind CSS
-- **UI Components:** shadcn/ui (Radix UI base)
-- **Icons:** Lucide React
-- **Animations:** Framer Motion
-- **Charts:** Recharts
-- **State/Backend:** Supabase (PostgreSQL, Auth, Edge Functions)
-- **I18n:** react-i18next
-- **Managing Query Status:** tanstack/react-query
-- **AI/LLM Integration:** OpenAI-compatible API (configurable)
+## Role & Context
+You are an expert Full-Stack Developer building "AceIELTS" - an IELTS exam preparation application for Web and Desktop platforms.
 
-# Core Development Principles
-1. **SOLID Principles:** Strictly adhere to SOLID principles.
-2. **Modularity:** Ensure code is modular to support multi-platform adaptation (Web & Desktop).
-3. **Type Safety:** No `any`. Define explicit interfaces for all props and data.
-4. **Functional Components:** Use React hooks and functional components only.
+## Tech Stack
+| Category | Technology |
+|----------|------------|
+| Framework | Vite (React 18+) for Web, Tauri for Desktop |
+| Language | TypeScript (Strict Mode) |
+| Styling | Tailwind CSS |
+| UI Components | shadcn/ui (Radix UI base) |
+| Icons | Lucide React |
+| Animations | Framer Motion |
+| Charts | Recharts |
+| Backend | Supabase (PostgreSQL, Auth, Edge Functions) |
+| I18n | react-i18next |
+| Data Fetching | TanStack React Query |
+| AI/LLM | OpenAI-compatible API (configurable) |
 
-# Code Quality & Validation Rules
-1. **Review Related Code:** After modifying code, always review related files and dependencies to ensure consistency and identify any necessary updates. This includes:
-   - Checking imports and exports
-   - Verifying type definitions are updated if interfaces changed
-   - Ensuring related services, hooks, or components are updated accordingly
-   - Checking for breaking changes in shared utilities or types
-2. **Run Type Checking & Linting:** After every code modification, you MUST run:
-   - `pnpm typecheck` - to verify TypeScript type safety across all packages
-   - `pnpm lint` - to ensure code follows ESLint rules and project standards
-   - Fix any errors or warnings before considering the task complete
+## Core Principles
 
-# Data Fetching & State Management Architecture
+### 1. SOLID & Modularity
+- Strictly adhere to SOLID principles
+- Code must be modular to support multi-platform adaptation (Web & Desktop)
 
-## 1. Three-Layer Architecture (Strict Separation)
-You must strictly follow this 3-layer pattern for data operations. **DO NOT** make Supabase calls directly inside UI components.
+### 2. Type Safety
+- **No `any`** - Define explicit interfaces for all props and data
+- Use `unknown` + type guards when type is truly unknown
+- All function parameters and return types must be explicitly typed
 
-### Layer 1: API Service Layer (`src/services` or `src/api`)
-- **Responsibility:** Handle communication with backend (Supabase Edge Functions) or direct Supabase access for simple operations.
-- **Rules:**
-  - Pure TypeScript/JavaScript functions (no React hooks).
-  - **Primary Pattern:** Call Supabase Edge Functions via `supabase.functions.invoke()` for all backend operations.
-  - **Direct Supabase Access (Exceptions Only):**
-    - Authentication operations (sign in, sign out, session management)
-    - Simple read queries protected by Row Level Security (RLS)
-    - Real-time subscriptions for UI updates
-  - Handle `data` and `error` unpacking here.
-  - Throw errors explicitly so React Query can catch them.
-  - **Naming:** `getUserById`, `updateUserProfile`, `createBook` (calls Edge Function).
-- **Edge Function Call Pattern:**
+### 3. React Patterns
+- Use functional components and hooks only (no class components)
+- Prefer `useMemo` and `useCallback` for expensive computations and callbacks
+- Use React Query for all server state management
+
+### 4. Code Quality Workflow
+After every code modification:
+1. **Review related files** - Check imports, exports, type definitions, and dependent components
+2. **Run validation**:
+   ```bash
+   pnpm typecheck  # TypeScript type safety
+   pnpm lint       # ESLint rules
+   ```
+3. Fix all errors before considering the task complete
+
+## Naming Conventions
+
+| Type | Convention | Example |
+|------|------------|---------|
+| Components | PascalCase | `VocabularyCard.tsx` |
+| Hooks | camelCase with `use` prefix | `useVocabularyBooks.ts` |
+| Services | camelCase | `vocabularyService.ts` |
+| Types/Interfaces | PascalCase with `I` prefix for interfaces | `IBook`, `BookProps` |
+| Constants | SCREAMING_SNAKE_CASE | `MAX_RETRY_COUNT` |
+| Files | kebab-case for non-components | `query-keys.ts` |
+
+## Import Order
 ```typescript
-// ✅ Good: Call Edge Function for backend operations
-export async function createBook(data: CreateBookInput): Promise<Book> {
-  const supabase = getSupabase()
-  const { data: result, error } = await supabase.functions.invoke('vocabulary-create-book', {
-    body: data
-  })
-  if (error) throw new Error(`Failed to create book: ${error.message}`)
-  return result
-}
+// 1. React and external libraries
+import { useState, useCallback } from "react"
+import { useQuery } from "@tanstack/react-query"
 
-// ✅ Good: Direct Supabase for simple RLS-protected reads
-export async function getBooks(userId: string): Promise<Book[]> {
-  const supabase = getSupabase()
-  const { data, error } = await supabase
-    .from('vocabulary_books')
-    .select('*')
-    .eq('user_id', userId)
-  if (error) throw error
-  return data
-}
+// 2. Internal packages
+import { createLogger } from "@ace-ielts/core"
+import { Button } from "@ace-ielts/ui"
 
-// ❌ Bad: Direct Supabase for complex operations (should use Edge Function)
-export async function importWords(bookId: string, words: Word[]): Promise<void> {
-  // Complex logic should be in Edge Function, not frontend service
-}
+// 3. Relative imports
+import { useBooks } from "../hooks/useBooks"
+import type { Book } from "../types"
 ```
-
-### Layer 2: Custom Hooks Layer (`src/hooks`)
-- **Responsibility:** Bridge API calls with React Query state management.
-- **Rules:**
-  - Wrap API functions using `useQuery` or `useMutation`.
-  - Centralize `queryKey` management (use factory functions or constants if needed).
-  - Handle `staleTime`, `gcTime`, and optimistic updates here.
-  - **Naming:** `useUser`, `useUpdateUser`.
-
-### Layer 3: UI Component Layer
-- **Responsibility:** Consume data and render UI.
-- **Rules:**
-  - Call the Custom Hook (Layer 2).
-  - **NEVER** import `supabase` client directly in a UI component for data fetching.
-  - Handle `isLoading`, `isError`, and `data` states from the hook.
-
-## 2. No Mock Data Layer
-- **Environment:** We use **Local Supabase** for development.
-- **Rule:** DO NOT create mock servers (like MirageJS) or mock JSON files for data fetching.
-- **Testing:** Rely on the local Supabase instance to provide real database behavior (RLS, Triggers). Use `seed.sql` for initial data.
-
-# UI & Implementation Rules
-
-## 1. Component Selection (Strict Hierarchy)
-- **Primary:** Use **shadcn/ui** components for all standard UI elements.
-- **Secondary:** If missing in shadcn, look for **Radix UI** primitives.
-- **Prohibited:** DO NOT write complex native DOM components (Modals, Dropdowns, Date Pickers) from scratch.
-
-## 2. Visual Style & Tailwind Config
-- **Primary Color:** `#0D9488` (Teal/Emerald range). Use `bg-primary` or equivalent in Tailwind config.
-- **Font:** `Plus Jakarta Sans` (Sans), `DM Serif Display` (Headings).
-- **Radius:** Default radius is `0.5rem` (8px/sm) or `0.75rem` (12px/md).
-- **Shadows:** Use subtle shadows for depth (Card style).
-- **Note:** For complete design system tokens, refer to `design.mdc`. This section only covers basic styling rules.
-
-## 3. Assets & Media
-- **Icons:** Use **Lucide React** exclusively. Import pattern: `import { IconName } from "lucide-react"`.
-- **Charts:** Use **Recharts** for all data visualization.
-- **No Manual SVGs:** Do not create inline SVGs unless it is the Brand Logo.
-
-## 4. Animation (Framer Motion)
-- Use `framer-motion` for interactions.
-- Avoid complex CSS `@keyframes`.
-- Standard transition: `duration-200 ease-out`.
-- Common variants: `FadeIn`, `SlideIn`, `ScaleIn` (see Design Tokens).
-
-## 5. Internationalization
-- All user-facing text MUST be wrapped in `t()` from `useTranslation`.
-- Example: `<span>{t('welcome_message')}</span>` NOT `<span>Welcome</span>`.
-
-# Logging & Observability
-
-## 1. Logging Architecture
-Use the centralized logging utility from `@ace-ielts/core` for all logging needs. **DO NOT** use raw `console.log`, `console.error`, etc. directly.
-
-### Logger Import
-```typescript
-import { createLogger, startTimer, logGroup } from "@ace-ielts/core"
-
-// Create a context-aware logger for each module/service
-const logger = createLogger("ServiceName")
-```
-
-## 2. Log Levels & When to Use Them
-
-| Level | Purpose | Example |
-|-------|---------|---------|
-| `debug` | Detailed debugging info, development only | Variable values, execution flow |
-| `info` | Normal operations, state changes | "User logged in", "Book created" |
-| `warn` | Recoverable issues, degraded functionality | "Retry attempt 2/3", "Fallback used" |
-| `error` | Failures requiring attention | API errors, database failures |
-
-### Log Level Rules
-- **Production:** Only `info`, `warn`, `error` are output by default
-- **Development:** All levels including `debug` are output
-- Use `warn` for recoverable errors, `error` for unrecoverable ones
-- Never log sensitive data (API keys, passwords, PII)
-
-## 3. Logging Patterns
-
-### Service Layer Logging
-```typescript
-const logger = createLogger("VocabularyService")
-
-export async function createBook(data: CreateBookInput): Promise<Book> {
-  logger.info("Creating vocabulary book", { userId: data.userId, bookName: data.name })
-  
-  const { data: book, error } = await supabase.from("vocabulary_books").insert(data)
-  
-  if (error) {
-    logger.error("Failed to create book", { userId: data.userId }, error)
-    throw new Error("Failed to create vocabulary book")
-  }
-  
-  logger.info("Book created successfully", { bookId: book.id })
-  return book
-}
-```
-
-### Performance Timing
-```typescript
-import { startTimer } from "@ace-ielts/core"
-
-export async function fetchBooks(): Promise<Book[]> {
-  const timer = startTimer("VocabularyService", "fetchBooks")
-  
-  try {
-    const books = await supabase.from("vocabulary_books").select("*")
-    timer.end({ bookCount: books.length })
-    return books
-  } catch (error) {
-    timer.endWithError(error as Error)
-    throw error
-  }
-}
-```
-
-### Grouped Operations (Batch/Import)
-```typescript
-import { logGroup } from "@ace-ielts/core"
-
-export async function importWords(words: Word[]): Promise<void> {
-  const group = logGroup("ImportService", "Batch word import")
-  group.info("Starting import", { wordCount: words.length })
-  
-  for (const word of words) {
-    // Process each word...
-    group.debug("Processing word", { word: word.word })
-  }
-  
-  group.info("Import completed", { successCount: words.length })
-  group.end()
-}
-```
-
-## 4. Structured Data Guidelines
-
-### Always Include Context
-```typescript
-// ✅ Good - includes relevant identifiers
-logger.info("Book deleted", { bookId, userId })
-
-// ❌ Bad - missing context
-logger.info("Book deleted")
-```
-
-### Use Consistent Key Names
-| Key | Description |
-|-----|-------------|
-| `userId` | User identifier |
-| `bookId` | Vocabulary book ID |
-| `wordId` | Vocabulary word ID |
-| `durationMs` | Operation duration in milliseconds |
-| `count`, `*Count` | Item counts (e.g., `wordCount`, `errorCount`) |
-| `attempt`, `maxAttempts` | Retry tracking |
-
-### Error Logging Format
-```typescript
-// Always pass error as the third argument
-logger.error("Operation failed", { bookId, userId }, error)
-logger.warn("Retrying operation", { attempt: 2, maxAttempts: 3 }, error)
-```
-
-## 5. What NOT to Log
-- ❌ API keys, tokens, or secrets
-- ❌ User passwords or sensitive credentials
-- ❌ Full request/response bodies with PII
-- ❌ High-frequency events in production (use debug level)
-- ❌ Redundant success logs for every minor operation
-
-## 6. Hook Layer Logging
-Hooks typically don't need logging - let services handle it. Exception: complex state management or debugging.
-
-```typescript
-// Only log significant hook state changes if needed
-const logger = createLogger("useVocabularyImport")
-
-// Log only for debugging complex async flows
-logger.debug("Import state changed", { status, progress })
-```
-
-# Error Handling
-
-## 1. Error Handling Architecture
-
-### Service Layer Error Handling
-- **Always throw errors** - Let React Query catch and handle them
-- **Use descriptive error messages** - Include context (userId, bookId, etc.)
-- **Preserve original errors** - Wrap with context, don't replace
-
-```typescript
-// ✅ Good: Descriptive error with context
-export async function createBook(data: CreateBookInput): Promise<Book> {
-  try {
-    const { data: result, error } = await supabase.functions.invoke('vocabulary-create-book', {
-      body: data
-    })
-    
-    if (error) {
-      throw new Error(`Failed to create book: ${error.message}`)
-    }
-    
-    if (!result) {
-      throw new Error('No data returned from create book function')
-    }
-    
-    return result
-  } catch (error) {
-    logger.error("Book creation failed", { userId: data.userId, bookName: data.name }, error as Error)
-    throw error // Re-throw to let React Query handle
-  }
-}
-```
-
-### Edge Function Error Response Format
-Edge Functions MUST return standardized error responses:
-
-```typescript
-// supabase/functions/example/index.ts
-try {
-  // ... operation
-  return new Response(JSON.stringify({ success: true, data: result }), {
-    headers: { "Content-Type": "application/json" }
-  })
-} catch (error) {
-  return new Response(JSON.stringify({ 
-    success: false, 
-    error: error.message,
-    code: error.code || "UNKNOWN_ERROR"
-  }), {
-    status: error.status || 400,
-    headers: { "Content-Type": "application/json" }
-  })
-}
-```
-
-### Frontend Error Handling
-- **React Query handles errors automatically** - Use `isError` and `error` from hooks
-- **Display user-friendly messages** - Don't expose technical details
-- **Use Error Boundaries** - Catch unexpected errors in component tree
-
-```typescript
-// ✅ Good: User-friendly error display
-const { data, isLoading, isError, error } = useBooks()
-
-if (isError) {
-  return (
-    <Alert variant="destructive">
-      <AlertDescription>
-        {t('errors.failedToLoadBooks')}
-      </AlertDescription>
-    </Alert>
-  )
-}
-```
-
-## 2. Error Types
-
-| Error Type | When to Use | User Message |
-|------------|-------------|--------------|
-| `ValidationError` | Invalid input data | "Please check your input and try again" |
-| `NotFoundError` | Resource doesn't exist | "The requested item was not found" |
-| `UnauthorizedError` | Authentication required | "Please sign in to continue" |
-| `NetworkError` | Connection issues | "Connection failed. Please check your internet." |
-| `ServerError` | Backend failures | "Something went wrong. Please try again later." |
-
-## 3. Error Recovery
-
-- **Retry logic** - Use React Query's built-in retry for transient errors
-- **Fallback UI** - Show cached data if available
-- **User actions** - Provide "Retry" buttons for failed operations
-
-# Performance Optimization
-
-## 1. Code Splitting & Lazy Loading
-
-### Route-based Code Splitting
-```typescript
-// ✅ Good: Lazy load routes
-import { lazy } from 'react'
-
-const VocabularyBooks = lazy(() => import('@ace-ielts/ui/pages/vocabulary/VocabularyBooks'))
-const Settings = lazy(() => import('@ace-ielts/ui/pages/Settings'))
-```
-
-### Component Lazy Loading
-```typescript
-// ✅ Good: Lazy load heavy components
-const Chart = lazy(() => import('./Chart'))
-
-function Dashboard() {
-  return (
-    <Suspense fallback={<ChartSkeleton />}>
-      <Chart data={data} />
-    </Suspense>
-  )
-}
-```
-
-## 2. React Query Optimization
-
-### Query Key Management
-- **Use factory functions** - Centralize query key generation
-- **Include dependencies** - Add filters, pagination to keys
-
-```typescript
-// ✅ Good: Centralized query keys
-export const vocabularyKeys = {
-  all: ['vocabulary'] as const,
-  books: () => [...vocabularyKeys.all, 'books'] as const,
-  book: (id: string) => [...vocabularyKeys.books(), id] as const,
-  words: (bookId: string) => [...vocabularyKeys.book(bookId), 'words'] as const,
-}
-```
-
-### Cache Configuration
-```typescript
-// ✅ Good: Optimize cache settings
-export function useBooks() {
-  return useQuery({
-    queryKey: vocabularyKeys.books(),
-    queryFn: getBooks,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
-  })
-}
-```
-
-### Optimistic Updates
-```typescript
-// ✅ Good: Optimistic updates for better UX
-const mutation = useMutation({
-  mutationFn: updateBook,
-  onMutate: async (newBook) => {
-    await queryClient.cancelQueries({ queryKey: vocabularyKeys.books() })
-    const previousBooks = queryClient.getQueryData(vocabularyKeys.books())
-    queryClient.setQueryData(vocabularyKeys.books(), (old) => 
-      old.map(book => book.id === newBook.id ? newBook : book)
-    )
-    return { previousBooks }
-  },
-  onError: (err, newBook, context) => {
-    queryClient.setQueryData(vocabularyKeys.books(), context.previousBooks)
-  },
-})
-```
-
-## 3. List Rendering Optimization
-
-### Virtual Scrolling
-- **Use for long lists** - 100+ items
-- **Libraries:** `@tanstack/react-virtual` or `react-window`
-
-### Memoization
-```typescript
-// ✅ Good: Memoize expensive computations
-const sortedWords = useMemo(() => {
-  return words.sort((a, b) => a.word.localeCompare(b.word))
-}, [words])
-
-// ✅ Good: Memoize callbacks
-const handleWordClick = useCallback((wordId: string) => {
-  navigate(`/vocabulary/words/${wordId}`)
-}, [navigate])
-```
-
-## 4. Image & Asset Optimization
-
-- **Use WebP format** - Better compression
-- **Lazy load images** - Use `loading="lazy"` attribute
-- **Responsive images** - Use `srcset` for different screen sizes
-- **Optimize SVGs** - Remove unnecessary metadata
-
-## 5. Bundle Size Optimization
-
-- **Tree shaking** - Import only what you need
-- **Avoid barrel imports in production** - Import directly from source files
-- **Analyze bundle** - Use `vite-bundle-visualizer` or `webpack-bundle-analyzer`
-
-```typescript
-// ❌ Bad: Import entire library
-import * as Icons from 'lucide-react'
-
-// ✅ Good: Import specific icons
-import { Book, Settings } from 'lucide-react'
-```
-
-# Language
-- All code, documentation, and comments must be in English.
