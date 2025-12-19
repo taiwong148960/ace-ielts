@@ -649,7 +649,7 @@ BEGIN
     END IF;
 
     PERFORM net.http_post(
-        url := v_origin || '/functions/v1/vocabulary-process-pending-words',
+        url := v_origin || '/functions/v1/vocabulary-words/process',
         headers := jsonb_build_object(
             'Content-Type', 'application/json',
             'Authorization', 'Bearer ' || v_secret
@@ -711,7 +711,7 @@ BEGIN
     END IF;
 
     PERFORM net.http_post(
-        url := v_origin || '/functions/v1/vocabulary-process-pending-words',
+        url := v_origin || '/functions/v1/vocabulary-words/process',
         headers := jsonb_build_object(
             'Content-Type', 'application/json',
             'Authorization', 'Bearer ' || v_secret

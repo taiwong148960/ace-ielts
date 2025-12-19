@@ -3,7 +3,7 @@
  * Handles all vocabulary book and word operations with Supabase
  */
 
-import { getSupabase, isSupabaseInitialized } from "./supabase"
+import { isSupabaseInitialized } from "./supabase"
 import type {
   VocabularyBook,
   VocabularyWord,
@@ -14,13 +14,14 @@ import type {
   UpdateBookSettingsInput
 } from "../types/vocabulary"
 import { createLogger } from "../utils/logger"
+import { fetchEdge } from "../utils/edge-client"
 
 // Create logger for this service
 const logger = createLogger("VocabularyService")
 
 /**
  * Get user's books with their progress
- * Calls Edge Function: vocabulary-get-books-with-progress
+ * Calls Edge Function: vocabulary-books
  */
 export async function getUserBooksWithProgress(
   userId: string
@@ -30,25 +31,21 @@ export async function getUserBooksWithProgress(
     return []
   }
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching user books with progress via Edge Function", { userId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-get-books-with-progress', {
-    body: { type: "user" }
-  })
-
-  if (error || !data?.success) {
-    logger.error("Failed to fetch user books with progress via Edge Function", { userId }, error)
+  try {
+    return await fetchEdge<VocabularyBookWithProgress[]>("vocabulary-books", "/", {
+      query: { type: "user" }
+    })
+  } catch (error) {
+    logger.error("Failed to fetch user books with progress", { userId }, error as Error)
     throw new Error("Failed to fetch user vocabulary books")
   }
-
-  return data.data as VocabularyBookWithProgress[]
 }
 
 /**
  * Get system books with user's progress
- * Calls Edge Function: vocabulary-get-books-with-progress
+ * Calls Edge Function: vocabulary-books
  */
 export async function getSystemBooksWithProgress(
   userId: string
@@ -58,25 +55,21 @@ export async function getSystemBooksWithProgress(
     return []
   }
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching system books with progress via Edge Function", { userId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-get-books-with-progress', {
-    body: { type: "system" }
-  })
-
-  if (error || !data?.success) {
-    logger.error("Failed to fetch system books with progress via Edge Function", { userId }, error)
+  try {
+    return await fetchEdge<VocabularyBookWithProgress[]>("vocabulary-books", "/", {
+      query: { type: "system" }
+    })
+  } catch (error) {
+    logger.error("Failed to fetch system books with progress", { userId }, error as Error)
     throw new Error("Failed to fetch system vocabulary books")
   }
-
-  return data.data as VocabularyBookWithProgress[]
 }
 
 /**
  * Create a new vocabulary book with words
- * Calls Edge Function: vocabulary-create-book
+ * Calls Edge Function: vocabulary-books
  */
 export async function createBook(
   userId: string,
@@ -86,37 +79,31 @@ export async function createBook(
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.info("Creating vocabulary book via Edge Function", { userId, bookName: input.name, wordCount: input.words.length })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-create-book', {
-    body: {
-      name: input.name,
-      description: input.description,
-      cover_color: input.cover_color,
-      cover_text: input.cover_text,
-      book_type: input.book_type,
-      words: input.words
-    }
-  })
-
-  if (error) {
-    logger.error("Failed to create book via Edge Function", { userId, bookName: input.name }, error)
-    throw new Error(error.message || "Failed to create vocabulary book")
+  try {
+    const data = await fetchEdge<VocabularyBook>("vocabulary-books", "/", {
+      method: "POST",
+      body: {
+        name: input.name,
+        description: input.description,
+        cover_color: input.cover_color,
+        cover_text: input.cover_text,
+        book_type: input.book_type,
+        words: input.words
+      }
+    })
+    logger.info("Vocabulary book created", { bookId: data.id, userId, wordCount: input.words.length })
+    return data
+  } catch (error) {
+    logger.error("Failed to create book", { userId, bookName: input.name }, error as Error)
+    throw new Error((error as Error).message || "Failed to create vocabulary book")
   }
-
-  if (!data?.success) {
-    throw new Error(data?.error || "Failed to create vocabulary book")
-  }
-
-  logger.info("Vocabulary book created", { bookId: data.data.id, userId, wordCount: input.words.length })
-  return data.data
 }
 
 /**
  * Update a vocabulary book
- * Calls Edge Function: vocabulary-update-book
+ * Calls Edge Function: vocabulary-books
  */
 export async function updateBook(
   bookId: string,
@@ -126,91 +113,73 @@ export async function updateBook(
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.info("Updating vocabulary book via Edge Function", { bookId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-update-book', {
-    body: {
-      bookId,
-      name: input.name,
-      description: input.description,
-      cover_color: input.cover_color,
-      cover_text: input.cover_text
-    }
-  })
-
-  if (error) {
-    logger.error("Failed to update book via Edge Function", { bookId }, error)
-    throw new Error(error.message || "Failed to update vocabulary book")
+  try {
+    const data = await fetchEdge<VocabularyBook>("vocabulary-books", `/${bookId}`, {
+      method: "PATCH",
+      body: {
+        name: input.name,
+        description: input.description,
+        cover_color: input.cover_color,
+        cover_text: input.cover_text
+      }
+    })
+    logger.info("Vocabulary book updated", { bookId })
+    return data
+  } catch (error) {
+    logger.error("Failed to update book", { bookId }, error as Error)
+    throw new Error((error as Error).message || "Failed to update vocabulary book")
   }
-
-  if (!data?.success) {
-    throw new Error(data?.error || "Failed to update vocabulary book")
-  }
-  
-  logger.info("Vocabulary book updated", { bookId })
-  return data.data
 }
 
 /**
  * Delete a vocabulary book
  * Only allows deleting user's own books (not system books)
- * Calls Edge Function: vocabulary-delete-book
+ * Calls Edge Function: vocabulary-books
  */
 export async function deleteBook(bookId: string, userId: string): Promise<void> {
   if (!isSupabaseInitialized()) {
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.info("Deleting vocabulary book via Edge Function", { bookId, userId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-delete-book', {
-    body: { bookId }
-  })
-
-  if (error) {
-    logger.error("Failed to delete book via Edge Function", { bookId, userId }, error)
-    throw new Error(error.message || "Failed to delete vocabulary book")
+  try {
+    await fetchEdge("vocabulary-books", `/${bookId}`, {
+      method: "DELETE"
+    })
+    logger.info("Vocabulary book deleted", { bookId, userId })
+  } catch (error) {
+    logger.error("Failed to delete book", { bookId, userId }, error as Error)
+    throw new Error((error as Error).message || "Failed to delete vocabulary book")
   }
-
-  if (!data?.success) {
-    throw new Error(data?.error || "Failed to delete vocabulary book")
-  }
-  
-  logger.info("Vocabulary book deleted", { bookId, userId })
 }
 
 /**
  * Get all words in a vocabulary book
- * Calls Edge Function: vocabulary-get-words
+ * Calls Edge Function: vocabulary-words
  */
 export async function getBookWords(bookId: string): Promise<VocabularyWord[]> {
   if (!isSupabaseInitialized()) {
     return []
   }
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching words via Edge Function", { bookId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-get-words', {
-    body: { bookId }
-  })
-
-  if (error || !data?.success) {
-    logger.error("Failed to fetch words via Edge Function", { bookId }, error)
+  try {
+    return await fetchEdge<VocabularyWord[]>("vocabulary-words", "/", {
+      query: { bookId }
+    })
+  } catch (error) {
+    logger.error("Failed to fetch words", { bookId }, error as Error)
     throw new Error("Failed to fetch vocabulary words")
   }
-
-  return data.data as VocabularyWord[]
 }
 
 /**
  * Add words to a vocabulary book
- * Calls Edge Function: vocabulary-add-words
+ * Calls Edge Function: vocabulary-words
  */
 export async function addWords(
   bookId: string,
@@ -220,63 +189,48 @@ export async function addWords(
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.info("Adding words to book via Edge Function", { bookId, wordCount: words.length })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-add-words', {
-    body: { bookId, words }
-  })
-
-  if (error) {
-    logger.error("Failed to add words via Edge Function", { bookId, wordCount: words.length }, error)
-    throw new Error(error.message || "Failed to add vocabulary words")
+  try {
+    const data = await fetchEdge<{ words: VocabularyWord[], wordCount: number }>("vocabulary-words", "/", {
+      method: "POST",
+      body: { bookId, words }
+    })
+    logger.info("Words added to book", { bookId, wordCount: data.words?.length || 0 })
+    return data.words || []
+  } catch (error) {
+    logger.error("Failed to add words", { bookId, wordCount: words.length }, error as Error)
+    throw new Error((error as Error).message || "Failed to add vocabulary words")
   }
-
-  if (!data?.success) {
-    throw new Error(data?.error || "Failed to add vocabulary words")
-  }
-  
-  logger.info("Words added to book", { bookId, wordCount: data.data.words?.length || 0 })
-  return data.data.words || []
 }
 
 /**
  * Delete a word from a vocabulary book
- * Calls Edge Function: vocabulary-delete-word
+ * Calls Edge Function: vocabulary-words
  */
 export async function deleteWord(wordId: string, bookId: string): Promise<void> {
   if (!isSupabaseInitialized()) {
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.info("Deleting word via Edge Function", { wordId, bookId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-delete-word', {
-    body: { wordId, bookId }
-  })
-
-  if (error) {
-    logger.error("Failed to delete word via Edge Function", { wordId, bookId }, error)
-    throw new Error(error.message || "Failed to delete vocabulary word")
+  try {
+    await fetchEdge("vocabulary-words", `/${wordId}`, {
+      method: "DELETE",
+      query: { bookId }
+    })
+    logger.info("Word deleted", { wordId, bookId })
+  } catch (error) {
+    logger.error("Failed to delete word", { wordId, bookId }, error as Error)
+    throw new Error((error as Error).message || "Failed to delete vocabulary word")
   }
-
-  if (!data?.success) {
-    throw new Error(data?.error || "Failed to delete vocabulary word")
-  }
-  
-  logger.info("Word deleted", { wordId, bookId })
 }
 
 /**
- * Vocabulary API object implementing the interface
- */
-/**
  * Get book settings for a user and book
  * Returns default settings if not found
- * Calls Edge Function: vocabulary-get-book-settings
+ * Calls Edge Function: vocabulary-books
  */
 export async function getBookSettings(
   userId: string,
@@ -286,25 +240,19 @@ export async function getBookSettings(
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching book settings via Edge Function", { userId, bookId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-get-book-settings', {
-    body: { bookId }
-  })
-
-  if (error || !data?.success) {
-    logger.error("Failed to fetch book settings via Edge Function", { userId, bookId }, error)
+  try {
+    return await fetchEdge<BookSettings>("vocabulary-books", `/${bookId}/settings`)
+  } catch (error) {
+    logger.error("Failed to fetch book settings", { userId, bookId }, error as Error)
     throw new Error("Failed to fetch book settings")
   }
-
-  return data.data as BookSettings
 }
 
 /**
  * Update or create book settings
- * Calls Edge Function: vocabulary-update-settings
+ * Calls Edge Function: vocabulary-books
  */
 export async function updateBookSettings(
   userId: string,
@@ -315,29 +263,22 @@ export async function updateBookSettings(
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.info("Updating book settings via Edge Function", { userId, bookId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-update-settings', {
-    body: {
-      bookId,
-      daily_new_limit: input.daily_new_limit,
-      daily_review_limit: input.daily_review_limit,
-      learning_mode: input.learning_mode,
-      study_order: input.study_order
-    }
-  })
-
-  if (error) {
-    logger.error("Failed to update book settings via Edge Function", { userId, bookId }, error)
-    throw new Error(error.message || "Failed to update book settings")
+  try {
+    const data = await fetchEdge<BookSettings>("vocabulary-books", `/${bookId}/settings`, {
+      method: "PATCH",
+      body: {
+        daily_new_limit: input.daily_new_limit,
+        daily_review_limit: input.daily_review_limit,
+        learning_mode: input.learning_mode,
+        study_order: input.study_order
+      }
+    })
+    logger.info("Book settings updated", { userId, bookId })
+    return data
+  } catch (error) {
+    logger.error("Failed to update book settings", { userId, bookId }, error as Error)
+    throw new Error((error as Error).message || "Failed to update book settings")
   }
-
-  if (!data?.success) {
-    throw new Error(data?.error || "Failed to update book settings")
-  }
-    
-  logger.info("Book settings updated", { userId, bookId })
-  return data.data
 }

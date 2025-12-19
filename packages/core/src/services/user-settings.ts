@@ -3,38 +3,31 @@
  * Handles user-specific settings including encrypted LLM API keys
  */
 
-import { getSupabase, isSupabaseInitialized } from "./supabase"
+import { isSupabaseInitialized } from "./supabase"
 import type { UserSettings, UpdateUserSettingsInput } from "../types/user-settings"
 import { createLogger } from "../utils/logger"
+import { fetchEdge } from "../utils/edge-client"
 
 // Create logger for this service
 const logger = createLogger("UserSettingsService")
 
 /**
  * Get user settings
- * Calls Edge Function: user-settings-get
+ * Calls Edge Function: user-settings
  */
 export async function getUserSettings(userId: string): Promise<UserSettings | null> {
   if (!isSupabaseInitialized()) {
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching user settings via Edge Function", { userId })
 
-  const { data, error } = await supabase.functions.invoke('user-settings-get', {})
-
-  if (error) {
-    logger.error("Failed to fetch user settings via Edge Function", { userId }, error)
+  try {
+    return await fetchEdge<UserSettings | null>("user-settings", "/")
+  } catch (error) {
+    logger.error("Failed to fetch user settings", { userId }, error as Error)
     throw new Error("Failed to fetch user settings")
   }
-
-  if (!data?.success) {
-    return null
-  }
-
-  return data.data as UserSettings | null
 }
 
 /**
@@ -56,7 +49,7 @@ export async function getOrCreateUserSettings(userId: string): Promise<UserSetti
 /**
  * Update user settings
  * Note: API keys are encrypted server-side in Edge Function
- * Calls Edge Function: user-settings-update
+ * Calls Edge Function: user-settings
  */
 export async function updateUserSettings(
   userId: string,
@@ -66,29 +59,23 @@ export async function updateUserSettings(
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.info("Updating user settings via Edge Function", { userId })
 
-  const { data, error } = await supabase.functions.invoke('user-settings-update', {
-    body: {
-      llm_provider: input.llm_provider,
-      llm_api_key: input.llm_api_key,
-      gemini_model_config: input.gemini_model_config
-    }
-  })
-
-  if (error) {
-    logger.error("Failed to update user settings via Edge Function", { userId }, error)
-    throw new Error(error.message || "Failed to update user settings")
+  try {
+    const data = await fetchEdge<UserSettings>("user-settings", "/", {
+      method: "PATCH",
+      body: {
+        llm_provider: input.llm_provider,
+        llm_api_key: input.llm_api_key,
+        gemini_model_config: input.gemini_model_config
+      }
+    })
+    logger.info("User settings updated", { userId })
+    return data
+  } catch (error) {
+    logger.error("Failed to update user settings", { userId }, error as Error)
+    throw new Error((error as Error).message || "Failed to update user settings")
   }
-
-  if (!data?.success) {
-    throw new Error(data?.error || "Failed to update user settings")
-  }
-    
-  logger.info("User settings updated", { userId })
-  return data.data
 }
 
 /**
@@ -101,22 +88,20 @@ export async function getLLMApiKey(userId: string): Promise<string | null> {
     throw new Error("Supabase not initialized")
   }
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching decrypted API key via Edge Function", { userId })
 
-  const { data, error } = await supabase.functions.invoke('user-settings-get-api-key', {})
+  try {
+    const data = await fetchEdge<{ hasApiKey: boolean, apiKey: string | null }>("user-settings", "/api-key")
+    
+    if (!data?.hasApiKey) {
+      return null
+    }
 
-  if (error) {
-    logger.error("Failed to get API key via Edge Function", { userId }, error)
+    return data.apiKey
+  } catch (error) {
+    logger.error("Failed to get API key", { userId }, error as Error)
     return null
   }
-
-  if (!data?.success || !data?.data?.hasApiKey) {
-    return null
-  }
-
-  return data.data.apiKey
 }
 
 /**
@@ -129,4 +114,3 @@ export async function hasLLMApiKey(userId: string): Promise<boolean> {
          settings.llm_api_key_encrypted !== null && 
          settings.llm_api_key_encrypted.length > 0
 }
-

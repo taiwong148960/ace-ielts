@@ -17,6 +17,9 @@ export {
   type LogGroup,
 } from "./logger"
 
+// Edge Client
+export { fetchEdge } from "./edge-client"
+
 /**
  * Utility function to merge Tailwind CSS classes with clsx
  * Handles conditional classes and prevents class conflicts

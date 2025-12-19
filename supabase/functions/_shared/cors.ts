@@ -7,13 +7,6 @@
  * - Desktop (Tauri): tauri://localhost
  */
 
-// Declare Deno global for TypeScript
-declare const Deno: {
-  env: {
-    get: (key: string) => string | undefined
-  }
-}
-
 /**
  * Allowed origins for CORS
  * In production, this is restricted to specific domains
@@ -103,7 +96,7 @@ export function errorResponse(
   status: number = 400,
   origin?: string | null
 ): Response {
-  return jsonResponse({ error: message, success: false }, status, origin)
+  return jsonResponse({ message }, status, origin)
 }
 
 /**
@@ -114,5 +107,5 @@ export function successResponse<T>(
   status: number = 200,
   origin?: string | null
 ): Response {
-  return jsonResponse({ success: true, data }, status, origin)
+  return jsonResponse(data, status, origin)
 }

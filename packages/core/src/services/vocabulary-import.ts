@@ -3,9 +3,10 @@
  * Handles vocabulary book import workflow via Edge Functions
  */
 
-import { getSupabase, isSupabaseInitialized } from "./supabase"
+import { isSupabaseInitialized } from "./supabase"
 import type { ImportProgress } from "../types/vocabulary"
 import { createLogger } from "../utils/logger"
+import { fetchEdge } from "../utils/edge-client"
 
 const logger = createLogger("VocabularyImportService")
 
@@ -17,17 +18,10 @@ export async function getImportProgress(bookId: string): Promise<ImportProgress 
     return null
   }
 
-  const supabase = getSupabase()
-
-  const { data, error } = await supabase.functions.invoke('vocabulary-get-import-progress', {
-    body: { bookId }
-  })
-
-  if (error || !data?.success) {
-    logger.warn("Failed to get import progress", { bookId }, error)
+  try {
+    return await fetchEdge<ImportProgress>("vocabulary-books", `/${bookId}/import-progress`)
+  } catch (error) {
+    logger.warn("Failed to get import progress", { bookId }, error as Error)
     return null
   }
-
-  return data.data as ImportProgress
 }
-

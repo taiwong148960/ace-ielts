@@ -3,7 +3,7 @@
  * Handles book detail page data, learning sessions, and spaced repetition
  */
 
-import { getSupabase, isSupabaseInitialized } from "./supabase"
+import { isSupabaseInitialized } from "./supabase"
 import type {
   VocabularyBook,
   UserWordProgress,
@@ -14,13 +14,14 @@ import type {
 } from "../types/vocabulary"
 import { GRADE_TO_RATING, type SpacedRepetitionGrade } from "../types/vocabulary"
 import { createLogger } from "../utils/logger"
+import { fetchEdge } from "../utils/edge-client"
 
 // Create logger for this service
 const logger = createLogger("VocabularyDetailService")
 
 /**
  * Get a book with full details for the book detail page
- * Calls Edge Function: vocabulary-get-book-details
+ * Calls Edge Function: vocabulary-books
  */
 export async function getBookWithDetails(
   bookId: string,
@@ -35,29 +36,41 @@ export async function getBookWithDetails(
     return null
   }
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching book details via Edge Function", { bookId, userId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-get-book-details', {
-    body: { bookId }
-  })
+  try {
+    const book = await fetchEdge<VocabularyBook>("vocabulary-books", `/${bookId}`)
+    
+    // We fetch progress as part of the book request in the new API
+    // but the frontend type expects it separated.
+    // The edge function returns { ...book, progress }
+    const progress = (book as VocabularyBook & { progress?: UserBookProgress }).progress || null
+    
+    // Calculate stats on client or fetch if needed
+    // For now we mock empty stats or we could add a stats endpoint
+    const stats: BookDetailStats = {
+      totalWords: book.word_count || 0,
+      mastered: progress?.mastered_count || 0,
+      learning: progress?.learning_count || 0,
+      newWords: progress?.new_count || 0,
+      todayReview: progress?.reviews_today || 0,
+      todayNew: progress?.new_words_today || 0,
+      estimatedMinutes: 0,
+      streak: progress?.streak_days || 0,
+      accuracy: progress?.accuracy_percent || 0,
+      averageStability: 0
+    }
 
-  if (error || !data?.success) {
-    logger.error("Failed to fetch book details via Edge Function", { bookId, userId }, error)
+    return { book, progress, stats }
+  } catch (error) {
+    logger.error("Failed to fetch book details", { bookId, userId }, error as Error)
     return null
-  }
-
-  return data.data as {
-    book: VocabularyBook
-    progress: UserBookProgress | null
-    stats: BookDetailStats
   }
 }
 
 /**
  * Get today's learning session (words to review + new words)
- * Calls Edge Function: vocabulary-get-learning-session
+ * Calls Edge Function: vocabulary-study
  */
 export async function getTodayLearningSession(
   bookId: string,
@@ -69,25 +82,21 @@ export async function getTodayLearningSession(
     return { reviewWords: [], newWords: [], totalCount: 0, estimatedMinutes: 0 }
   }
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching learning session via Edge Function", { bookId, userId, newLimit, reviewLimit })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-get-learning-session', {
-    body: { bookId, newLimit, reviewLimit }
-  })
-
-  if (error || !data?.success) {
-    logger.warn("Failed to get learning session via Edge Function", { bookId, userId }, error)
+  try {
+    return await fetchEdge<TodayLearningSession>("vocabulary-study", "/session", {
+      query: { bookId, newLimit, reviewLimit }
+    })
+  } catch (error) {
+    logger.warn("Failed to get learning session", { bookId, userId }, error as Error)
     return { reviewWords: [], newWords: [], totalCount: 0, estimatedMinutes: 0 }
   }
-
-  return data.data as TodayLearningSession
 }
 
 /**
  * Get recently learned words
- * Calls Edge Function: vocabulary-get-recent-words
+ * Calls Edge Function: vocabulary-study
  */
 export async function getRecentWords(
   bookId: string,
@@ -96,25 +105,21 @@ export async function getRecentWords(
 ): Promise<WordWithProgress[]> {
   if (!isSupabaseInitialized()) return []
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching recent words via Edge Function", { bookId, userId, limit })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-get-recent-words', {
-    body: { bookId, limit }
-  })
-
-  if (error || !data?.success) {
-    logger.warn("Failed to get recent words via Edge Function", { bookId, userId }, error)
+  try {
+    return await fetchEdge<WordWithProgress[]>("vocabulary-study", "/recent", {
+      query: { bookId, limit }
+    })
+  } catch (error) {
+    logger.warn("Failed to get recent words", { bookId, userId }, error as Error)
     return []
   }
-
-  return data.data as WordWithProgress[]
 }
 
 /**
  * Get difficult words (high lapse count or low stability)
- * Calls Edge Function: vocabulary-get-difficult-words
+ * Calls Edge Function: vocabulary-study
  */
 export async function getDifficultWords(
   bookId: string,
@@ -123,25 +128,21 @@ export async function getDifficultWords(
 ): Promise<WordWithProgress[]> {
   if (!isSupabaseInitialized()) return []
 
-  const supabase = getSupabase()
-  
   logger.debug("Fetching difficult words via Edge Function", { bookId, userId, limit })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-get-difficult-words', {
-    body: { bookId, limit }
-  })
-
-  if (error || !data?.success) {
-    logger.warn("Failed to get difficult words via Edge Function", { bookId, userId }, error)
+  try {
+    return await fetchEdge<WordWithProgress[]>("vocabulary-study", "/difficult", {
+      query: { bookId, limit }
+    })
+  } catch (error) {
+    logger.warn("Failed to get difficult words", { bookId, userId }, error as Error)
     return []
   }
-
-  return data.data as WordWithProgress[]
 }
 
 /**
  * Process a word review and update progress
- * Calls Edge Function: vocabulary-process-review
+ * Calls Edge Function: vocabulary-study
  */
 export async function processWordReview(
   userId: string,
@@ -151,35 +152,28 @@ export async function processWordReview(
 ): Promise<UserWordProgress | null> {
   if (!isSupabaseInitialized()) return null
 
-  const supabase = getSupabase()
-  
   logger.info("Processing word review via Edge Function", { userId, wordId, bookId, grade })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-process-review', {
-    body: {
-      wordId,
-      bookId,
-      grade: GRADE_TO_RATING[grade]
-    }
-  })
-
-  if (error) {
-    logger.error("Failed to process review via Edge Function", { userId, wordId, bookId }, error)
+  try {
+    const data = await fetchEdge<UserWordProgress>("vocabulary-study", "/review", {
+      method: "POST",
+      body: {
+        wordId,
+        bookId,
+        grade: GRADE_TO_RATING[grade]
+      }
+    })
+    logger.info("Word review processed", { userId, wordId, bookId })
+    return data
+  } catch (error) {
+    logger.error("Failed to process review", { userId, wordId, bookId }, error as Error)
     return null
   }
-
-  if (!data?.success) {
-    logger.error("Review processing failed", { userId, wordId, bookId, error: data?.error })
-    return null
-  }
-
-  logger.info("Word review processed", { userId, wordId, bookId })
-  return data.data
 }
 
 /**
  * Initialize user book progress when starting to learn a book
- * Calls Edge Function: vocabulary-init-progress
+ * Calls Edge Function: vocabulary-study
  */
 export async function initializeBookProgress(
   userId: string,
@@ -187,35 +181,20 @@ export async function initializeBookProgress(
 ): Promise<UserBookProgress | null> {
   if (!isSupabaseInitialized()) return null
 
-  const supabase = getSupabase()
-  
   logger.info("Initializing book progress via Edge Function", { userId, bookId })
 
-  const { data, error } = await supabase.functions.invoke('vocabulary-init-progress', {
-    body: { bookId }
-  })
-
-  if (error) {
-    logger.error("Failed to initialize book progress via Edge Function", { userId, bookId }, error)
+  try {
+    const data = await fetchEdge<UserBookProgress>("vocabulary-study", "/init", {
+      method: "POST",
+      body: { bookId }
+    })
+    logger.info("Book progress initialized", { userId, bookId })
+    return data
+  } catch (error) {
+    logger.error("Failed to initialize book progress", { userId, bookId }, error as Error)
     return null
   }
-
-  if (!data?.success) {
-    logger.error("Book progress initialization failed", { userId, bookId, error: data?.error })
-    return null
-  }
-  
-  logger.info("Book progress initialized", { userId, bookId })
-  return data.data
 }
-
-/**
- * Get schedule preview for a word
- * 
- * Note: This function has been removed as the FSRS algorithm is now handled
- * entirely by Supabase Edge Functions. If schedule preview is needed in the UI,
- * it should be implemented as an Edge Function endpoint.
- */
 
 /**
  * Format next review time for display
@@ -243,4 +222,3 @@ export function formatNextReview(dueAt: string | null): string {
   
   return `${Math.round(diffDays / 365)} years`
 }
-

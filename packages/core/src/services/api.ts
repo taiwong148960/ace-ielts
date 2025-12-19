@@ -16,10 +16,11 @@ import type {
   MockTestStatus,
   BlogArticle
 } from "../types"
-import { isSupabaseInitialized, getSupabase } from "./supabase"
+import { isSupabaseInitialized } from "./supabase"
 import { getCurrentUser } from "./auth"
 import { userToProfile } from "../types/auth"
 import { createLogger } from "../utils/logger"
+import { fetchEdge } from "../utils/edge-client"
 
 // Create logger for this service
 const logger = createLogger("DashboardApiService")
@@ -59,25 +60,21 @@ async function getUserProfile(): Promise<UserProfile> {
 
 /**
  * Get study statistics from user_book_progress and review_logs
- * Calls Edge Function: dashboard-get-study-stats
+ * Calls Edge Function: dashboard
  */
 async function getStudyStats(userId: string): Promise<StudyStats> {
-  const supabase = getSupabase()
-
   logger.debug("Fetching study stats via Edge Function", { userId })
 
-  const { data, error } = await supabase.functions.invoke('dashboard-get-study-stats', {})
-
-  if (error || !data?.success) {
-    logger.warn("Failed to fetch study stats via Edge Function", { userId }, error)
+  try {
+    return await fetchEdge<StudyStats>("dashboard", "/study-stats")
+  } catch (error) {
+    logger.warn("Failed to fetch study stats", { userId }, error as Error)
     return {
       dayStreak: 0,
       todayMinutes: 0,
       totalMinutes: 0
     }
   }
-
-  return data.data as StudyStats
 }
 
 /**
@@ -150,26 +147,22 @@ function getPracticeTasks(): PracticeTask[] {
 
 /**
  * Get browsing history from review_logs
- * Calls Edge Function: dashboard-get-browsing-history
+ * Calls Edge Function: dashboard
  */
 async function getBrowsingHistory(
   userId: string,
   limit: number = 10
 ): Promise<BrowsingHistoryItem[]> {
-  const supabase = getSupabase()
-
   logger.debug("Fetching browsing history via Edge Function", { userId, limit })
 
-  const { data, error } = await supabase.functions.invoke('dashboard-get-browsing-history', {
-    body: { limit }
-  })
-
-  if (error || !data?.success) {
-    logger.warn("Failed to fetch browsing history via Edge Function", { userId, limit }, error)
+  try {
+    return await fetchEdge<BrowsingHistoryItem[]>("dashboard", "/browsing-history", {
+      query: { limit }
+    })
+  } catch (error) {
+    logger.warn("Failed to fetch browsing history", { userId, limit }, error as Error)
     return []
   }
-
-  return data.data as BrowsingHistoryItem[]
 }
 
 /**
@@ -220,22 +213,20 @@ function getBlogArticles(): BlogArticle[] {
 
 /**
  * Calculate takeaway stats for a given time range
- * Calls Edge Function: dashboard-get-takeaway-stats
+ * Calls Edge Function: dashboard
  */
 async function calculateTakeawayStats(
   userId: string,
   timeRange: TakeawayStats["timeRange"]
 ): Promise<TakeawayStats> {
-  const supabase = getSupabase()
-  
   logger.debug("Fetching takeaway stats via Edge Function", { userId, timeRange })
 
-  const { data, error } = await supabase.functions.invoke('dashboard-get-takeaway-stats', {
-    body: { timeRange }
-  })
-
-  if (error || !data?.success) {
-    logger.warn("Failed to fetch takeaway stats via Edge Function", { userId, timeRange }, error)
+  try {
+    return await fetchEdge<TakeawayStats>("dashboard", "/takeaway-stats", {
+      query: { timeRange }
+    })
+  } catch (error) {
+    logger.warn("Failed to fetch takeaway stats", { userId, timeRange }, error as Error)
     return {
       wordsViewed: 0,
       articlesRead: 0,
@@ -243,8 +234,6 @@ async function calculateTakeawayStats(
       timeRange
     }
   }
-
-  return data.data as TakeawayStats
 }
 
 /**
@@ -319,4 +308,3 @@ export const dashboardApi: IDashboardApi = {
 }
 
 export default dashboardApi
-
