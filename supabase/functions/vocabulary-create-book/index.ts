@@ -4,7 +4,7 @@
  */
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
-import { createLogger } from "@supabase/functions/_shared/logger.ts"
+import { createLogger } from "../_shared/logger.ts"
 import { BOOK_COVER_COLORS, type CreateBookInput } from "../_shared/types.ts"
 
 // Create logger for this function

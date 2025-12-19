@@ -6,7 +6,7 @@
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
 import { safeDecrypt } from "../_shared/crypto.ts"
-import { createLogger } from "@supabase/functions/_shared/logger.ts"
+import { createLogger } from "../_shared/logger.ts"
 
 const logger = createLogger("user-settings-get-api-key")
 

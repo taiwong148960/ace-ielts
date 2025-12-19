@@ -6,12 +6,17 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
 DO $$
 BEGIN
     CREATE EXTENSION IF NOT EXISTS "pg_cron" WITH SCHEMA "extensions";
-EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'pg_cron could not be installed'; END $$;
+EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'pg_cron could not be installed'; END $$;
 
 DO $$
 BEGIN
     CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "extensions";
-EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'pg_net could not be installed'; END $$;
+EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'pg_net could not be installed'; END $$;
+
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
+EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'supabase_vault could not be installed'; END $$;
 
 -- ============================================
 -- 2. Enum Types
@@ -163,6 +168,14 @@ CREATE TABLE IF NOT EXISTS "public"."user_settings" (
     CONSTRAINT "user_settings_user_id_key" UNIQUE ("user_id")
 );
 
+CREATE TABLE IF NOT EXISTS "public"."app_settings" (
+    "key" VARCHAR(100) PRIMARY KEY,
+    "value" JSONB NOT NULL,
+    "description" TEXT,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- 4.7 Review Logs
 CREATE TABLE IF NOT EXISTS "public"."vocabulary_review_logs" (
     "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -223,6 +236,7 @@ ALTER TABLE "public"."vocabulary_user_book_progress" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."vocabulary_user_word_progress" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."vocabulary_book_settings" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."user_settings" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."app_settings" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."vocabulary_review_logs" ENABLE ROW LEVEL SECURITY;
 
 -- 6.1 Vocabulary Words (Global - readable by all authenticated users)
@@ -297,6 +311,13 @@ CREATE POLICY "Allow manage own review logs" ON "public"."vocabulary_review_logs
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+-- 6.5 App Settings
+CREATE POLICY "Allow read app settings" ON "public"."app_settings"
+    FOR SELECT TO authenticated, anon, service_role USING (true);
+
+CREATE POLICY "Allow service role manage app settings" ON "public"."app_settings"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
 -- ============================================
 -- 7. Triggers
 -- ============================================
@@ -318,6 +339,9 @@ CREATE TRIGGER "update_vocabulary_book_settings_timestamp" BEFORE UPDATE ON "pub
 
 DROP TRIGGER IF EXISTS "update_user_settings_timestamp" ON "public"."user_settings";
 CREATE TRIGGER "update_user_settings_timestamp" BEFORE UPDATE ON "public"."user_settings" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+DROP TRIGGER IF EXISTS "update_app_settings_timestamp" ON "public"."app_settings";
+CREATE TRIGGER "update_app_settings_timestamp" BEFORE UPDATE ON "public"."app_settings" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 -- ============================================
 -- 8. Business Logic Functions
@@ -590,6 +614,8 @@ SET search_path = public
 AS $$
 DECLARE
     pending_exists BOOLEAN;
+    v_secret TEXT;
+    v_origin TEXT;
 BEGIN
     SELECT EXISTS(
         SELECT 1 FROM "public"."vocabulary_words" 
@@ -602,15 +628,31 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
-        RAISE NOTICE 'pg_net not available, skipping trigger';
+        RAISE EXCEPTION 'pg_net not available, skipping trigger';
+        RETURN NULL;
+    END IF;
+
+    -- Retrieve secret from Vault
+    SELECT decrypted_secret INTO v_secret FROM vault.decrypted_secrets WHERE name = 'supabase_secret';
+
+    -- Retrieve origin from App Settings
+    SELECT value #>> '{}' INTO v_origin FROM app_settings WHERE key = 'supabase_origin';
+
+    IF v_origin IS NULL THEN
+        v_origin := 'https://localhost:54321';
+    END IF;
+
+    -- Fallback if secret is missing (log warning and exit)
+    IF v_secret IS NULL THEN
+        RAISE EXCEPTION 'supabase_secret not found in vault';
         RETURN NULL;
     END IF;
 
     PERFORM net.http_post(
-        url := '/functions/v1/vocabulary-process-pending-words',
+        url := v_origin || '/functions/v1/vocabulary-process-pending-words',
         headers := jsonb_build_object(
             'Content-Type', 'application/json',
-            'Authorization', 'Bearer ' || 'sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz'
+            'Authorization', 'Bearer ' || v_secret
         ),
         body := jsonb_build_object('source', 'trigger')
     );
@@ -634,6 +676,8 @@ SET search_path = public
 AS $$
 DECLARE
     pending_exists BOOLEAN;
+    v_secret TEXT;
+    v_origin TEXT;
 BEGIN
     SELECT EXISTS(
         SELECT 1 FROM "public"."vocabulary_words" 
@@ -646,15 +690,31 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
-        RAISE NOTICE 'pg_net extension not installed.';
+        RAISE EXCEPTION 'pg_net extension not installed.';
+        RETURN;
+    END IF;
+
+    -- Retrieve secret from Vault
+    SELECT decrypted_secret INTO v_secret FROM vault.decrypted_secrets WHERE name = 'supabase_secret';
+
+    -- Retrieve origin from App Settings
+    SELECT value #>> '{}' INTO v_origin FROM app_settings WHERE key = 'supabase_origin';
+
+    IF v_origin IS NULL THEN
+        v_origin := 'https://localhost:54321';
+    END IF;
+
+    -- Fallback if secret is missing
+    IF v_secret IS NULL THEN
+        RAISE EXCEPTION 'supabase_secret not found in vault';
         RETURN;
     END IF;
 
     PERFORM net.http_post(
-        url := '/functions/v1/vocabulary-process-pending-words',
+        url := v_origin || '/functions/v1/vocabulary-process-pending-words',
         headers := jsonb_build_object(
             'Content-Type', 'application/json',
-            'Authorization', 'Bearer ' || 'sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz'
+            'Authorization', 'Bearer ' || v_secret
         ),
         body := jsonb_build_object('source', 'cron_failsafe')
     );
@@ -706,16 +766,16 @@ BEGIN
 
         PERFORM cron.schedule(
             'recover-stuck-vocabulary-words',
-            '*/5 * * * *',
+            '*/1 * * * *',
             'SELECT public.recover_stuck_vocabulary_words()'
         );
 
         RAISE NOTICE 'Cron jobs scheduled successfully';
     ELSE
-        RAISE NOTICE 'pg_cron not available, skipping cron job setup';
+        RAISE EXCEPTION 'pg_cron not available, skipping cron job setup';
     END IF;
 EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'Failed to schedule cron jobs: %', SQLERRM;
+    RAISE WARNING 'Failed to schedule cron jobs: %', SQLERRM;
 END $$;
 
 -- ============================================
@@ -729,6 +789,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA "public" TO "authenticated", "service_role";
 GRANT SELECT ON "public"."vocabulary_books" TO "anon";
 GRANT SELECT ON "public"."vocabulary_words" TO "anon";
 GRANT SELECT ON "public"."vocabulary_book_words" TO "anon";
+GRANT SELECT ON "public"."app_settings" TO "anon";
 
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA "public" TO "authenticated", "service_role";
 GRANT EXECUTE ON FUNCTION "public"."add_word_to_book" TO "authenticated";

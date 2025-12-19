@@ -10,7 +10,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { createLogger } from "@supabase/functions/_shared/logger.ts"
+import { createLogger } from "../_shared/logger.ts"
 import { safeDecrypt } from "../_shared/crypto.ts"
 
 const logger = createLogger("vocabulary-process-pending-words")

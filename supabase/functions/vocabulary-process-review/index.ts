@@ -4,7 +4,7 @@
  */
 import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
-import { createLogger } from "@supabase/functions/_shared/logger.ts"
+import { createLogger } from "../_shared/logger.ts"
 import { processReview, createInitialWordProgress } from "../_shared/fsrs.ts"
 import { type ProcessReviewInput, type FSRSRating } from "../_shared/types.ts"
 
