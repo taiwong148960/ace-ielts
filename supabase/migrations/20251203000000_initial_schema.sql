@@ -639,7 +639,7 @@ BEGIN
     SELECT value #>> '{}' INTO v_origin FROM app_settings WHERE key = 'supabase_origin';
 
     IF v_origin IS NULL THEN
-        v_origin := 'https://localhost:54321';
+        v_origin := 'http://host.docker.internal:54321';
     END IF;
 
     -- Fallback if secret is missing (log warning and exit)
@@ -701,7 +701,7 @@ BEGIN
     SELECT value #>> '{}' INTO v_origin FROM app_settings WHERE key = 'supabase_origin';
 
     IF v_origin IS NULL THEN
-        v_origin := 'https://localhost:54321';
+        v_origin := 'http://host.docker.internal:54321';
     END IF;
 
     -- Fallback if secret is missing

@@ -4,7 +4,7 @@
 
 -- Default App Settings for Development
 INSERT INTO "public"."app_settings" ("key", "value", "description")
-VALUES ('supabase_origin', '"https://localhost:54321"', 'Base URL for Supabase Edge Functions')
+VALUES ('supabase_origin', '"http://host.docker.internal:54321"', 'Base URL for Supabase Edge Functions')
 ON CONFLICT ("key") DO NOTHING;
 
 -- Add default secret for development (user should update this in production)
@@ -15,7 +15,7 @@ BEGIN
         -- 1. Supabase Secret Key (for Edge Functions security)
         BEGIN
             PERFORM vault.create_secret(
-                'sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz', 
+                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0', 
                 'supabase_secret',
                 'Secret key for securing Edge Function calls from Database'
             );

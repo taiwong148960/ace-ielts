@@ -57,11 +57,6 @@ export class Router {
       const match = route.pattern.exec({ pathname: path })
       if (match) {
         const params = (match.pathname.groups || {}) as Record<string, string>
-        this.logger.info("Route matched", {
-          method: req.method,
-          path,
-          pattern: route.pattern.pathname,
-        })
         try {
           return await route.handler(req, params)
         } catch (error) {

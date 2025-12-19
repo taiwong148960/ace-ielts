@@ -45,7 +45,7 @@ async function handleGetStudyStats(req: Request) {
     .eq("user_id", user.id)
 
   const dayStreak = progressData && progressData.length > 0
-    ? Math.max(...progressData.map(p => p.streak_days || 0))
+    ? Math.max(...progressData.map((p: { streak_days?: number }) => p.streak_days || 0))
     : 0
 
   // Calculate today's study time
@@ -60,7 +60,7 @@ async function handleGetStudyStats(req: Request) {
     .gte("reviewed_at", todayStart)
 
   const todayMinutes = todayReviews
-    ? Math.round((todayReviews.reduce((sum, r) => sum + (r.review_time_ms || 30000), 0) / 1000) / 60)
+    ? Math.round((todayReviews.reduce((sum: number, r: { review_time_ms?: number }) => sum + (r.review_time_ms || 30000), 0) / 1000) / 60)
     : 0
 
   // Calculate total study time
@@ -70,7 +70,7 @@ async function handleGetStudyStats(req: Request) {
     .eq("user_id", user.id)
 
   const totalMinutes = allReviews
-    ? Math.round((allReviews.reduce((sum, r) => sum + (r.review_time_ms || 30000), 0) / 1000) / 60)
+    ? Math.round((allReviews.reduce((sum: number, r: { review_time_ms?: number }) => sum + (r.review_time_ms || 30000), 0) / 1000) / 60)
     : 0
 
   return successResponse({ dayStreak, todayMinutes, totalMinutes })
@@ -81,6 +81,8 @@ async function handleGetBrowsingHistory(req: Request) {
   const url = new URL(req.url)
   const limit = parseInt(url.searchParams.get("limit") || "10")
 
+  logger.info("Fetching browsing history", { userId: user.id, limit })
+
   const { data: reviews, error } = await supabaseAdmin
     .from("vocabulary_review_logs")
     .select("id, word_id, book_id, reviewed_at")
@@ -90,21 +92,21 @@ async function handleGetBrowsingHistory(req: Request) {
 
   if (error || !reviews || reviews.length === 0) return successResponse([])
 
-  const wordIds = Array.from(new Set(reviews.map(r => r.word_id)))
-  const bookIds = Array.from(new Set(reviews.map(r => r.book_id)))
+  const wordIds = Array.from(new Set(reviews.map((r: { word_id: string }) => r.word_id)))
+  const bookIds = Array.from(new Set(reviews.map((r: { book_id: string }) => r.book_id)))
 
   const [wordsResult, booksResult] = await Promise.all([
     supabaseAdmin.from("vocabulary_words").select("id, word, book_id").in("id", wordIds),
     supabaseAdmin.from("vocabulary_books").select("id, name").in("id", bookIds)
   ])
 
-  const wordsMap = new Map((wordsResult.data || []).map(w => [w.id, w]))
-  const booksMap = new Map((booksResult.data || []).map(b => [b.id, b]))
+  const wordsMap = new Map((wordsResult.data || []).map((w: { id: string; word: string; book_id: string }) => [w.id, w]))
+  const booksMap = new Map((booksResult.data || []).map((b: { id: string; name: string }) => [b.id, b]))
 
   const historyItems = []
   for (const review of reviews) {
-    const word = wordsMap.get(review.word_id)
-    const book = booksMap.get(review.book_id)
+    const word = wordsMap.get(review.word_id) as { word: string } | undefined
+    const book = booksMap.get(review.book_id) as { name: string } | undefined
     if (word) {
       historyItems.push({
         id: review.id,
@@ -124,6 +126,8 @@ async function handleGetTakeawayStats(req: Request) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const url = new URL(req.url)
   const timeRange = url.searchParams.get("timeRange") || "week"
+
+  logger.info("Fetching takeaway stats", { userId: user.id, timeRange })
 
   if (!["day", "week", "month", "all"].includes(timeRange)) {
     return errorResponse("Invalid timeRange", 400)
@@ -146,7 +150,7 @@ async function handleGetTakeawayStats(req: Request) {
     .eq("user_id", user.id)
     .gte("reviewed_at", startDate.toISOString())
 
-  const uniqueWords = reviews ? new Set(reviews.map(r => r.word_id)).size : 0
+  const uniqueWords = reviews ? new Set(reviews.map((r: { word_id: string }) => r.word_id)).size : 0
 
   return successResponse({
     wordsViewed: uniqueWords,

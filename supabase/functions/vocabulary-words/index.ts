@@ -44,6 +44,8 @@ async function handleGetWords(req: Request) {
   const url = new URL(req.url)
   const bookId = url.searchParams.get("bookId")
 
+  logger.info("Fetching words", { userId: user.id, bookId })
+
   if (!bookId) return errorResponse("Book ID is required", 400)
 
   // Verify access
@@ -66,6 +68,8 @@ async function handleAddWords(req: Request) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const input = await req.json()
   const { bookId, words } = input
+
+  logger.info("Adding words", { userId: user.id, bookId, count: words?.length })
 
   if (!bookId) return errorResponse("Book ID is required", 400)
   if (!words || !Array.isArray(words) || words.length === 0) return errorResponse("Words array required", 400)
@@ -93,6 +97,8 @@ async function handleAddWords(req: Request) {
 
   if (error) return errorResponse("Failed to add words", 500)
 
+  logger.info("Words added successfully", { userId: user.id, bookId, count: cleanedWords.length })
+
   const { data: updatedBook } = await supabaseAdmin
     .from("vocabulary_books")
     .select("word_count")
@@ -107,6 +113,8 @@ async function handleDeleteWord(req: Request, params: Record<string, string>) {
   const wordId = params.id
   const url = new URL(req.url)
   const bookId = url.searchParams.get("bookId")
+
+  logger.info("Deleting word", { userId: user.id, bookId, wordId })
 
   if (!bookId) return errorResponse("Book ID is required (query param)", 400)
 
@@ -227,6 +235,8 @@ async function handleProcessPendingWords(req: Request) {
     }
   }
 
+  logger.info("Batch processing completed", { processed: processedCount, total: words.length })
+
   return successResponse({ processed: processedCount, total: words.length })
 }
 
@@ -264,7 +274,8 @@ async function enrichWord(word: string, userId: string, supabaseAdmin: any): Pro
   let geminiApiKey = Deno.env.get("GEMINI_API_KEY")
   if (!geminiApiKey) {
     if (!userSettings.llm_api_key_encrypted) throw new Error("LLM API key not configured")
-    geminiApiKey = await safeDecrypt(userSettings.llm_api_key_encrypted)
+    const decrypted = await safeDecrypt(userSettings.llm_api_key_encrypted)
+    geminiApiKey = decrypted || undefined
   }
   if (!geminiApiKey) throw new Error("Gemini API key not available")
 

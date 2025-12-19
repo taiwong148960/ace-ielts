@@ -46,6 +46,8 @@ async function handleGetSession(req: Request) {
   const newLimit = parseInt(url.searchParams.get("newLimit") || "20")
   const reviewLimit = parseInt(url.searchParams.get("reviewLimit") || "100")
 
+  logger.info("Starting study session", { userId: user.id, bookId, newLimit, reviewLimit })
+
   if (!bookId) return errorResponse("Book ID is required", 400)
 
   // Verify access
@@ -135,6 +137,8 @@ async function handleProcessReview(req: Request) {
   const input = await req.json()
   const { wordId, bookId, grade } = input
 
+  logger.info("Processing review", { userId: user.id, wordId, bookId, grade })
+
   if (!wordId || !bookId || !grade) return errorResponse("Missing fields", 400)
   if (![1, 2, 3, 4].includes(grade)) return errorResponse("Invalid grade", 400)
 
@@ -217,6 +221,8 @@ async function handleProcessReview(req: Request) {
 
   await updateBookProgressStats(supabaseAdmin, user.id, bookId, isNew, now)
 
+  logger.info("Review processed successfully", { userId: user.id, wordId, newState: updatedProgress.state })
+
   return successResponse(updatedProgress)
 }
 
@@ -225,6 +231,8 @@ async function handleGetRecent(req: Request) {
   const url = new URL(req.url)
   const bookId = url.searchParams.get("bookId")
   const limit = parseInt(url.searchParams.get("limit") || "5")
+
+  logger.info("Fetching recent words", { userId: user.id, bookId, limit })
 
   if (!bookId) return errorResponse("Book ID is required", 400)
 

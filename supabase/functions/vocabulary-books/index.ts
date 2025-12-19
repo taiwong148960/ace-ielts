@@ -74,6 +74,8 @@ async function handleListBooks(req: Request) {
   const url = new URL(req.url)
   const type = url.searchParams.get("type") || "user"
 
+  logger.info("Fetching books", { userId: user.id, type })
+
   if (!["user", "system"].includes(type)) {
     return errorResponse("Type must be 'user' or 'system'", 400)
   }
@@ -131,6 +133,8 @@ async function handleCreateBook(req: Request) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const input: CreateBookInput = await req.json()
 
+  logger.info("Creating book", { userId: user.id, name: input.name })
+
   if (!input.name || typeof input.name !== "string" || input.name.trim().length === 0) {
     return errorResponse("Book name is required", 400)
   }
@@ -186,12 +190,16 @@ async function handleCreateBook(req: Request) {
     accuracy_percent: 0
   })
 
+  logger.info("Book created successfully", { bookId: book.id, wordCount: cleanedWords.length })
+
   return successResponse(book)
 }
 
 async function handleGetBook(req: Request, params: Record<string, string>) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const bookId = params.id
+
+  logger.info("Fetching book details", { userId: user.id, bookId })
 
   const { data: book, error } = await supabaseAdmin
     .from("vocabulary_books")
@@ -219,6 +227,8 @@ async function handleUpdateBook(req: Request, params: Record<string, string>) {
   const bookId = params.id
   const input = await req.json()
 
+  logger.info("Updating book", { userId: user.id, bookId })
+
   // Check ownership
   const { data: existingBook } = await supabaseAdmin
     .from("vocabulary_books")
@@ -243,12 +253,16 @@ async function handleUpdateBook(req: Request, params: Record<string, string>) {
     .single()
 
   if (error) return errorResponse("Failed to update book", 500)
+  
+  logger.info("Book updated successfully", { bookId })
   return successResponse(book)
 }
 
 async function handleDeleteBook(req: Request, params: Record<string, string>) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const bookId = params.id
+
+  logger.info("Deleting book", { userId: user.id, bookId })
 
   const { data: existingBook } = await supabaseAdmin
     .from("vocabulary_books")
@@ -266,12 +280,16 @@ async function handleDeleteBook(req: Request, params: Record<string, string>) {
     .eq("id", bookId)
 
   if (error) return errorResponse("Failed to delete book", 500)
+  
+  logger.info("Book deleted successfully", { bookId })
   return successResponse({ deleted: true, bookId })
 }
 
 async function handleGetSettings(req: Request, params: Record<string, string>) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const bookId = params.id
+
+  logger.info("Fetching book settings", { userId: user.id, bookId })
 
   const { data: settings, error } = await supabaseAdmin
     .from("vocabulary_book_settings")
@@ -298,6 +316,8 @@ async function handleUpdateSettings(req: Request, params: Record<string, string>
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const bookId = params.id
   const input = await req.json()
+
+  logger.info("Updating book settings", { userId: user.id, bookId })
 
   const updateData: Record<string, unknown> = {}
   if (input.daily_new_limit !== undefined) updateData.daily_new_limit = input.daily_new_limit
@@ -343,9 +363,11 @@ async function handleUpdateSettings(req: Request, params: Record<string, string>
   return successResponse(result)
 }
 
-async function handleGetImportProgress(req: Request, params: Record<string, string>) {
+  async function handleGetImportProgress(req: Request, params: Record<string, string>) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const bookId = params.id
+
+  logger.info("Checking import progress", { userId: user.id, bookId })
 
   const { data: book } = await supabaseAdmin
     .from("vocabulary_books")

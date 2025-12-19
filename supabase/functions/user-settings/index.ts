@@ -39,6 +39,8 @@ Deno.serve(async (req) => {
 async function handleGetSettings(req: Request) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
 
+  logger.info("Fetching user settings", { userId: user.id })
+
   const { data: settings, error: settingsError } = await supabaseAdmin
     .from("user_settings")
     .select("*")
@@ -58,6 +60,8 @@ async function handleGetSettings(req: Request) {
 async function handleUpdateSettings(req: Request) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const input = await req.json()
+
+  logger.info("Updating user settings", { userId: user.id, llm_provider: input.llm_provider })
 
   const updateData: Record<string, unknown> = {}
   
@@ -101,11 +105,15 @@ async function handleUpdateSettings(req: Request) {
     llm_api_key_encrypted: settings.llm_api_key_encrypted ? "[ENCRYPTED]" : null
   }
 
+  logger.info("User settings updated successfully", { userId: user.id })
+
   return successResponse(safeSettings)
 }
 
 async function handleGetApiKey(req: Request) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
+
+  logger.info("Retrieving API key", { userId: user.id })
 
   const { data: settings, error } = await supabaseAdmin
     .from("user_settings")
