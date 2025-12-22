@@ -15,22 +15,6 @@ alwaysApply: true
 
 ---
 
-## Deployment Modes
-
-### SaaS Mode (Cloud-Hosted)
-- **Users:** End users wanting ready-to-use service
-- **Infrastructure:** Vercel + Supabase Cloud
-- **LLM API:** Platform-managed (subscription)
-- **Database:** Shared Supabase with RLS
-
-### Self-Hosted Mode (Open Source)
-- **Users:** Developers, enterprises, privacy-conscious users
-- **Infrastructure:** User's own servers
-- **LLM API:** User provides OpenAI-compatible key
-- **Database:** User's Supabase or local PostgreSQL
-
----
-
 ## Environments
 
 | Environment | URL | Purpose |
@@ -43,22 +27,22 @@ alwaysApply: true
 
 ## Environment Variables
 
-### Required (All Modes)
+### Required (Frontend)
 ```env
 VITE_SUPABASE_URL=<supabase_project_url>
 VITE_SUPABASE_ANON_KEY=<supabase_anon_key>
 ```
 
-### Mode Configuration
+### Project-Level Configuration (Edge Functions)
+These are set as secrets in Supabase Edge Functions:
 ```env
-# SaaS
-VITE_DEPLOYMENT_MODE=saas
-VITE_LLM_API_KEY=<platform_key>  # Server-side only
-
-# Self-Hosted
-VITE_DEPLOYMENT_MODE=self-hosted
-# LLM key configured via Settings UI
+GEMINI_API_KEY=<gemini_api_key>  # Project-level LLM API key
+SUPABASE_URL=<supabase_project_url>
+SUPABASE_SERVICE_ROLE_KEY=<service_role_key>
+ENCRYPTION_KEY=<encryption_key_for_user_data>
 ```
+
+**Note:** Project-level API keys are stored in environment variables (Edge Function secrets). User-level configuration (LLM provider selection, model parameters) is stored in the `user_settings` table.
 
 ### Desktop Only
 ```env
@@ -69,14 +53,14 @@ TAURI_KEY_PASSWORD=<password>
 ### Usage in Code
 ```typescript
 // packages/core/src/config/deployment.ts
-export type DeploymentMode = "saas" | "self-hosted"
-
-export function getDeploymentMode(): DeploymentMode {
-  return (import.meta.env.VITE_DEPLOYMENT_MODE as DeploymentMode) || "self-hosted"
-}
-
-export function isSaaSMode(): boolean {
-  return getDeploymentMode() === "saas"
+export function getEnvironmentUrls() {
+  const isDev = import.meta.env.DEV
+  
+  return {
+    supabaseUrl: import.meta.env.VITE_SUPABASE_URL as string,
+    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+    appUrl: isDev ? "http://localhost:3000" : "https://www.ace-ielts.net",
+  }
 }
 ```
 
@@ -127,23 +111,23 @@ Secrets managed in Dashboard → Edge Functions → Secrets
 
 ## LLM API Configuration
 
-| Mode | Key Storage | Access |
-|------|-------------|--------|
-| SaaS | Supabase Secrets | Edge Functions read directly |
-| Self-Hosted | User settings table (encrypted) | Edge Functions read from DB |
+**Project-level keys:** Stored in Edge Function environment variables (Supabase Secrets)
+- Edge Functions check `Deno.env.get("GEMINI_API_KEY")` first
+- Falls back to user settings if project-level key not available
 
-**SaaS:** Users never see API key  
-**Self-Hosted:** Settings UI for key input, stored encrypted
+**User-level configuration:** Stored in `user_settings` table (encrypted)
+- LLM provider selection (Gemini, OpenAI, etc.)
+- Model parameters (temperature, topK, topP, etc.)
+- User-specific API keys (optional, encrypted)
 
----
-
-## Feature Flags
-
+Edge Functions prioritize project-level keys, then user settings:
 ```typescript
-if (isSaaSMode()) {
-  // Show subscription/billing
-} else {
-  // Show API key configuration
+// In Edge Functions
+let geminiApiKey = Deno.env.get("GEMINI_API_KEY")
+if (!geminiApiKey) {
+  // Fallback to user settings
+  const userSettings = await getUserSettings(userId)
+  geminiApiKey = await decrypt(userSettings.llm_api_key_encrypted)
 }
 ```
 

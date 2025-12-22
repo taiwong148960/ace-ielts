@@ -370,7 +370,6 @@
   "settings": {
     "title": "Settings",
     "description": "Manage your account settings and preferences",
-    "notAvailableInSaaS": "Settings are not available in SaaS mode. Please use self-hosted mode to configure API keys.",
     "save": "Save",
     "saving": "Saving...",
     "saved": "Settings saved successfully",
@@ -379,17 +378,6 @@
       "description": "Choose your preferred LLM provider for vocabulary enrichment",
       "label": "Provider",
       "hint": "Select the LLM provider you want to use. Currently, only Gemini is fully supported."
-    },
-    "llmApiKey": {
-      "title": "LLM API Key",
-      "description": "Configure your LLM API key for vocabulary enrichment (self-hosted mode only)",
-      "label": "API Key",
-      "placeholder": "Enter your Gemini API key",
-      "hint": "Your API key is encrypted and stored securely. It will be used to enrich vocabulary words with definitions, examples, and more.",
-      "configured": "API key is configured",
-      "saved": "API key saved successfully",
-      "show": "Show",
-      "hide": "Hide"
     },
     "geminiConfig": {
       "title": "Gemini Model Configuration",

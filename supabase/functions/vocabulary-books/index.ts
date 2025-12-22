@@ -317,17 +317,17 @@ async function handleUpdateSettings(req: Request, params: Record<string, string>
   const bookId = params.id
   const input = await req.json()
 
-  logger.info("Updating book settings", { userId: user.id, bookId })
-
-  const updateData: Record<string, unknown> = {}
-  if (input.daily_new_limit !== undefined) updateData.daily_new_limit = input.daily_new_limit
-  if (input.daily_review_limit !== undefined) updateData.daily_review_limit = input.daily_review_limit
-  if (input.learning_mode !== undefined) updateData.learning_mode = input.learning_mode
-  if (input.study_order !== undefined) updateData.study_order = input.study_order
-
-  if (input.daily_new_limit !== undefined && input.daily_review_limit === undefined) {
-    updateData.daily_review_limit = input.daily_new_limit * 3
+  // Validate that all required fields are provided (full configuration required)
+  if (
+    input.daily_new_limit === undefined ||
+    input.daily_review_limit === undefined ||
+    input.learning_mode === undefined ||
+    input.study_order === undefined
+  ) {
+    return errorResponse("daily_new_limit, daily_review_limit, learning_mode, and study_order are required", 400)
   }
+
+  logger.info("Updating book settings with full configuration", { userId: user.id, bookId })
 
   // Upsert logic
   const { data: existing } = await supabaseAdmin
@@ -339,21 +339,30 @@ async function handleUpdateSettings(req: Request, params: Record<string, string>
 
   let result
   if (existing) {
+    // User has settings - replace with full configuration
     const { data, error } = await supabaseAdmin
       .from("vocabulary_book_settings")
-      .update(updateData)
+      .update({
+        daily_new_limit: input.daily_new_limit,
+        daily_review_limit: input.daily_review_limit,
+        learning_mode: input.learning_mode,
+        study_order: input.study_order
+      })
       .eq("id", existing.id)
       .select().single()
     if (error) return errorResponse("Failed to update settings", 500)
     result = data
   } else {
+    // User has never set settings - create with full configuration
     const { data, error } = await supabaseAdmin
       .from("vocabulary_book_settings")
       .insert({
         user_id: user.id,
         book_id: bookId,
-        ...DEFAULT_BOOK_SETTINGS,
-        ...updateData
+        daily_new_limit: input.daily_new_limit,
+        daily_review_limit: input.daily_review_limit,
+        learning_mode: input.learning_mode,
+        study_order: input.study_order
       })
       .select().single()
     if (error) return errorResponse("Failed to create settings", 500)

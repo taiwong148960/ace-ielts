@@ -3,7 +3,7 @@ import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
 import { createLogger } from "../_shared/logger.ts"
 import { Router } from "../_shared/router.ts"
-import { encrypt, safeDecrypt } from "../_shared/crypto.ts"
+import { DEFAULT_GEMINI_MODEL_CONFIG } from "../_shared/types.ts"
 
 const logger = createLogger("user-settings")
 
@@ -18,7 +18,6 @@ const router = new Router()
 
 router.get("/", handleGetSettings)
 router.patch("/", handleUpdateSettings)
-router.get("/api-key", handleGetApiKey)
 
 Deno.serve(async (req) => {
   const cors = handleCors(req)
@@ -49,11 +48,24 @@ async function handleGetSettings(req: Request) {
 
   if (settingsError) {
     if (settingsError.code === "PGRST116") {
-      return successResponse(null, 200)
+      // No settings found - return default settings with placeholder id
+      // The id will be generated when settings are first saved
+      const defaultSettings = {
+        id: "", // Placeholder - will be set when saved
+        user_id: user.id,
+        llm_api_key_encrypted: null,
+        llm_provider: "gemini" as const,
+        gemini_model_config: DEFAULT_GEMINI_MODEL_CONFIG,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      return successResponse(defaultSettings, 200)
     }
     return errorResponse("Failed to fetch user settings", 500)
   }
 
+  // Return user settings as-is, even if gemini_model_config is null
+  // Only use defaults when user has never set settings (handled above)
   return successResponse(settings, 200)
 }
 
@@ -61,15 +73,12 @@ async function handleUpdateSettings(req: Request) {
   const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
   const input = await req.json()
 
-  logger.info("Updating user settings", { userId: user.id, llm_provider: input.llm_provider })
+  // Validate that all required fields are provided (full configuration required)
+  if (!input.llm_provider || !input.gemini_model_config) {
+    return errorResponse("llm_provider and gemini_model_config are required", 400)
+  }
 
-  const updateData: Record<string, unknown> = {}
-  
-  if (input.llm_provider !== undefined) updateData.llm_provider = input.llm_provider
-  if (input.llm_api_key !== undefined) updateData.llm_api_key_encrypted = await encrypt(input.llm_api_key)
-  if (input.gemini_model_config !== undefined) updateData.gemini_model_config = input.gemini_model_config
-
-  if (Object.keys(updateData).length === 0) return errorResponse("No settings to update", 400)
+  logger.info("Updating user settings with full configuration", { userId: user.id, llm_provider: input.llm_provider })
 
   const { data: existing } = await supabaseAdmin
     .from("user_settings")
@@ -80,61 +89,32 @@ async function handleUpdateSettings(req: Request) {
   let settings
 
   if (existing) {
+    // User has settings - replace with full configuration
     const { data, error } = await supabaseAdmin
       .from("user_settings")
-      .update(updateData)
+      .update({
+        llm_provider: input.llm_provider,
+        gemini_model_config: input.gemini_model_config
+      })
       .eq("id", existing.id)
       .select().single()
     if (error) return errorResponse("Failed to update user settings", 500)
     settings = data
   } else {
+    // User has never set settings - create with full configuration
     const { data, error } = await supabaseAdmin
       .from("user_settings")
       .insert({
         user_id: user.id,
-        llm_provider: input.llm_provider || "gemini",
-        ...updateData
+        llm_provider: input.llm_provider,
+        gemini_model_config: input.gemini_model_config
       })
       .select().single()
     if (error) return errorResponse("Failed to create user settings", 500)
     settings = data
   }
 
-  const safeSettings = {
-    ...settings,
-    llm_api_key_encrypted: settings.llm_api_key_encrypted ? "[ENCRYPTED]" : null
-  }
-
   logger.info("User settings updated successfully", { userId: user.id })
 
-  return successResponse(safeSettings)
-}
-
-async function handleGetApiKey(req: Request) {
-  const { user, supabaseAdmin } = await initSupabase(req.headers.get("Authorization"))
-
-  logger.info("Retrieving API key", { userId: user.id })
-
-  const { data: settings, error } = await supabaseAdmin
-    .from("user_settings")
-    .select("llm_api_key_encrypted, llm_provider")
-    .eq("user_id", user.id)
-    .single()
-
-  if (error || !settings) {
-    return successResponse({ hasApiKey: false, apiKey: null, provider: null })
-  }
-
-  if (!settings.llm_api_key_encrypted) {
-    return successResponse({ hasApiKey: false, apiKey: null, provider: settings.llm_provider })
-  }
-
-  const decryptedKey = await safeDecrypt(settings.llm_api_key_encrypted)
-  if (!decryptedKey) return errorResponse("Failed to decrypt API key", 500)
-
-  return successResponse({
-    hasApiKey: true,
-    apiKey: decryptedKey,
-    provider: settings.llm_provider
-  })
+  return successResponse(settings)
 }

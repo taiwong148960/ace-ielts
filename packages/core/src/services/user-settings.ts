@@ -1,6 +1,6 @@
 /**
  * User Settings Service
- * Handles user-specific settings including encrypted LLM API keys
+ * Handles user-specific settings
  */
 
 import { isSupabaseInitialized } from "./supabase"
@@ -40,15 +40,21 @@ export async function getOrCreateUserSettings(userId: string): Promise<UserSetti
     return existing
   }
 
+  // Import default configs
+  const { DEFAULT_GEMINI_TEXT_MODEL_CONFIG, DEFAULT_GEMINI_TTS_MODEL_CONFIG } = await import("../types/vocabulary")
+  
   // Create default settings using updateUserSettings (which supports create)
   return await updateUserSettings(userId, {
-    llm_provider: "gemini"
+    llm_provider: "gemini",
+    gemini_model_config: {
+      textModel: DEFAULT_GEMINI_TEXT_MODEL_CONFIG,
+      ttsModel: DEFAULT_GEMINI_TTS_MODEL_CONFIG
+    }
   })
 }
 
 /**
  * Update user settings
- * Note: API keys are encrypted server-side in Edge Function
  * Calls Edge Function: user-settings
  */
 export async function updateUserSettings(
@@ -64,11 +70,7 @@ export async function updateUserSettings(
   try {
     const data = await fetchEdge<UserSettings>("user-settings", "/", {
       method: "PATCH",
-      body: {
-        llm_provider: input.llm_provider,
-        llm_api_key: input.llm_api_key,
-        gemini_model_config: input.gemini_model_config
-      }
+      body: input
     })
     logger.info("User settings updated", { userId })
     return data
@@ -78,39 +80,3 @@ export async function updateUserSettings(
   }
 }
 
-/**
- * Get LLM API key (decrypted)
- * Only available in self-hosted mode
- * Calls Edge Function for secure server-side decryption
- */
-export async function getLLMApiKey(userId: string): Promise<string | null> {
-  if (!isSupabaseInitialized()) {
-    throw new Error("Supabase not initialized")
-  }
-
-  logger.debug("Fetching decrypted API key via Edge Function", { userId })
-
-  try {
-    const data = await fetchEdge<{ hasApiKey: boolean, apiKey: string | null }>("user-settings", "/api-key")
-    
-    if (!data?.hasApiKey) {
-      return null
-    }
-
-    return data.apiKey
-  } catch (error) {
-    logger.error("Failed to get API key", { userId }, error as Error)
-    return null
-  }
-}
-
-/**
- * Check if user has API key configured
- * This checks the settings without decrypting the key
- */
-export async function hasLLMApiKey(userId: string): Promise<boolean> {
-  const settings = await getUserSettings(userId)
-  return settings !== null && 
-         settings.llm_api_key_encrypted !== null && 
-         settings.llm_api_key_encrypted.length > 0
-}

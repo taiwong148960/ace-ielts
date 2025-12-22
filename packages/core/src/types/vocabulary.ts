@@ -383,12 +383,13 @@ export const DEFAULT_BOOK_SETTINGS: Omit<BookSettings, "id" | "user_id" | "book_
 
 /**
  * Update book settings input
+ * All fields are required - full configuration must be provided on update
  */
 export interface UpdateBookSettingsInput {
-  daily_new_limit?: number
-  daily_review_limit?: number
-  learning_mode?: LearningMode
-  study_order?: StudyOrder
+  daily_new_limit: number
+  daily_review_limit: number
+  learning_mode: LearningMode
+  study_order: StudyOrder
 }
 
 /**
@@ -475,17 +476,15 @@ export const DEFAULT_AUDIO_CONFIG: AudioConfig = {
  * Supported Gemini text models
  */
 export type GeminiTextModel = 
-  | "gemini-3-pro-preview"
-  | "gemini-2.5-flash"
-  | "gemini-2.5-flash-lite"
-  | "gemini-2.5-pro"
+  | "gemini-3-flash"
+  | "gemini-3-pro"
 
 /**
  * Supported Gemini TTS (Text-to-Speech) models
  */
 export type GeminiTTSModel = 
-  | "gemini-2.5-pro-preview-tts"
-  | "gemini-2.5-flash-preview-tts"
+  | "gemini-2.5-flash-tts"
+  | "gemini-2.5-pro-tts"
 
 /**
  * Gemini text model generation configuration
@@ -510,7 +509,7 @@ export interface GeminiTTSModelConfig {
  * Default Gemini text model configuration
  */
 export const DEFAULT_GEMINI_TEXT_MODEL_CONFIG: GeminiTextModelConfig = {
-  model: "gemini-3-pro-preview",
+  model: "gemini-3-flash",
   temperature: 0.7,
   topK: 40,
   topP: 0.95,
@@ -521,5 +520,5 @@ export const DEFAULT_GEMINI_TEXT_MODEL_CONFIG: GeminiTextModelConfig = {
  * Default Gemini TTS model configuration
  */
 export const DEFAULT_GEMINI_TTS_MODEL_CONFIG: GeminiTTSModelConfig = {
-  model: "gemini-2.5-flash-preview-tts"
+  model: "gemini-2.5-flash-tts"
 }

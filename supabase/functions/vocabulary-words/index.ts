@@ -3,10 +3,93 @@ import { handleCors, errorResponse, successResponse } from "../_shared/cors.ts"
 import { initSupabase } from "../_shared/supabase.ts"
 import { createLogger } from "../_shared/logger.ts"
 import { Router } from "../_shared/router.ts"
+import { DEFAULT_GEMINI_TEXT_MODEL_CONFIG, DEFAULT_GEMINI_TTS_MODEL_CONFIG } from "../_shared/types.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { safeDecrypt } from "../_shared/crypto.ts"
 
 const logger = createLogger("vocabulary-words")
+
+interface WordDefinition {
+  partOfSpeech: string;
+  meaning: string;
+  translation: string;
+  context: string;
+}
+
+interface ExampleSentence {
+  sentence: string;
+  source: string;
+  translation: string;
+  audio_url?: string;
+}
+
+interface WordAnalysisResult {
+  definitions: WordDefinition[];
+  exampleSentences: ExampleSentence[];
+  synonyms: string[];
+  antonyms: string[];
+  collocations: string[];
+  relatedWords: {
+    wordFamily: string[];
+    topic: string;
+  };
+  easilyConfused: { word: string; difference: string }[];
+  usageFrequency: string;
+  tenses: string[];
+}
+
+const RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    definitions: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          partOfSpeech: { type: "STRING" },
+          meaning: { type: "STRING" },
+          translation: { type: "STRING" },
+          context: { type: "STRING" },
+        },
+        required: ["partOfSpeech", "meaning", "translation", "context"],
+      },
+    },
+    exampleSentences: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          sentence: { type: "STRING" },
+          source: { type: "STRING" },
+          translation: { type: "STRING" },
+        },
+        required: ["sentence", "source", "translation"],
+      },
+    },
+    synonyms: { type: "ARRAY", items: { type: "STRING" } },
+    antonyms: { type: "ARRAY", items: { type: "STRING" } },
+    collocations: { type: "ARRAY", items: { type: "STRING" } },
+    relatedWords: {
+      type: "OBJECT",
+      properties: {
+        wordFamily: { type: "ARRAY", items: { type: "STRING" } },
+        topic: { type: "STRING" },
+      },
+    },
+    easilyConfused: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          word: { type: "STRING" },
+          difference: { type: "STRING" },
+        },
+      },
+    },
+    usageFrequency: { type: "STRING", enum: ["High", "Medium", "Low"] },
+    tenses: { type: "ARRAY", items: { type: "STRING" } },
+  },
+  required: ["definitions", "exampleSentences", "synonyms", "relatedWords"],
+};
 
 declare const Deno: {
   serve: (handler: (req: Request) => Response | Promise<Response>) => void
@@ -149,10 +232,8 @@ async function handleDeleteWord(req: Request, params: Record<string, string>) {
 // Process Pending Words Logic
 // ============================================================================
 
-const DEFAULT_MODEL = "gemini-1.5-pro"
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-const TTS_BASE_URL = "https://texttospeech.googleapis.com/v1"
-const DEFAULT_VOICE = "en-US-Neural2-F"
+const DEFAULT_VOICE = "Kore" // Prebuilt voice from Gemini TTS
 const BATCH_SIZE = 5
 
 async function handleProcessPendingWords(req: Request) {
@@ -163,17 +244,34 @@ async function handleProcessPendingWords(req: Request) {
 
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-  const { data: words, error: wordsError } = await supabaseAdmin
-    .from("vocabulary_words")
-    .select("id, word, import_status")
-    .in("import_status", ["pending", "importing"])
-    .order("created_at", { ascending: true })
-    .limit(BATCH_SIZE)
+  // Generate unique instance ID for this function execution
+  const instanceId = `edge-function-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 
-  if (wordsError) return errorResponse(wordsError.message, 500)
-  if (!words || words.length === 0) return successResponse({ processed: 0, message: "No pending words" })
+  // Atomically claim pending words using database function
+  // This ensures no conflicts when multiple functions run concurrently
+  const { data: words, error: wordsError } = await supabaseAdmin.rpc("claim_pending_vocabulary_words", {
+    batch_size: BATCH_SIZE,
+    instance_id: instanceId
+  })
+
+  if (wordsError) {
+    logger.error("Failed to claim pending words", {}, wordsError as Error)
+    return errorResponse(wordsError.message, 500)
+  }
+
+  if (!words || words.length === 0) {
+    return successResponse({ 
+      processed: 0, 
+      failed: 0,
+      total: 0,
+      instanceId 
+    })
+  }
+
+  logger.info("Claimed words for processing", { instanceId, count: words.length })
 
   let processedCount = 0
+  let failedCount = 0
 
   for (const wordRecord of words) {
     try {
@@ -185,7 +283,17 @@ async function handleProcessPendingWords(req: Request) {
         .single()
 
       if (!bookWord || !bookWord.vocabulary_books) {
-        logger.warn("No book/user found for word - skipping", { wordId: wordRecord.id })
+        logger.warn("No book/user found for word - marking as failed", { wordId: wordRecord.id })
+        // Mark as failed if no book/user found
+        await supabaseAdmin
+          .from("vocabulary_words")
+          .update({
+            import_status: "failed",
+            import_error: "No book or user found for word",
+            locked_by: null
+          })
+          .eq("id", wordRecord.id)
+        failedCount++
         continue
       }
 
@@ -193,6 +301,7 @@ async function handleProcessPendingWords(req: Request) {
       
       const { wordData, wordAudioUrl, exampleAudioUrls } = await enrichWord(
         wordRecord.word,
+        wordRecord.id,
         userId,
         supabaseAdmin
       )
@@ -203,7 +312,8 @@ async function handleProcessPendingWords(req: Request) {
           import_status: "done",
           word_details: wordData,
           word_audio_url: wordAudioUrl,
-          example_audio_urls: exampleAudioUrls
+          example_audio_urls: exampleAudioUrls,
+          locked_by: null
         })
         .eq("id", wordRecord.id)
 
@@ -231,62 +341,228 @@ async function handleProcessPendingWords(req: Request) {
 
       processedCount++
     } catch (error) {
-      logger.error("Failed to process word", { wordId: wordRecord.id }, error as Error)
+      logger.error("Failed to process word", { wordId: wordRecord.id, instanceId }, error as Error)
+      // Mark as failed on error
+      try {
+        await supabaseAdmin
+          .from("vocabulary_words")
+          .update({
+            import_status: "failed",
+            import_error: error instanceof Error ? error.message : "Unknown error",
+            locked_by: null
+          })
+          .eq("id", wordRecord.id)
+      } catch (updateError) {
+        logger.error("Failed to mark word as failed", { wordId: wordRecord.id }, updateError as Error)
+      }
+      failedCount++
     }
   }
 
-  logger.info("Batch processing completed", { processed: processedCount, total: words.length })
+  logger.info("Batch processing completed", { 
+    instanceId, 
+    processed: processedCount, 
+    failed: failedCount,
+    total: words.length 
+  })
 
-  return successResponse({ processed: processedCount, total: words.length })
+  return successResponse({ 
+    processed: processedCount, 
+    failed: failedCount,
+    total: words.length,
+    instanceId 
+  })
 }
 
 // Helper functions for Process
-async function generateAudio(text: string, apiKey: string, voice: string = DEFAULT_VOICE): Promise<string> {
-  const url = `${TTS_BASE_URL}/text:synthesize?key=${apiKey}`
+/**
+ * Converts PCM audio data (24kHz, mono, 16-bit) to WAV format
+ */
+function pcmToWav(pcmData: Uint8Array, sampleRate: number = 24000, channels: number = 1, bitsPerSample: number = 16): Uint8Array {
+  const byteRate = sampleRate * channels * (bitsPerSample / 8)
+  const blockAlign = channels * (bitsPerSample / 8)
+  const dataSize = pcmData.length
+  const fileSize = 36 + dataSize
+
+  const wavHeader = new ArrayBuffer(44)
+  const view = new DataView(wavHeader)
+
+  // RIFF header
+  view.setUint8(0, 0x52) // 'R'
+  view.setUint8(1, 0x49) // 'I'
+  view.setUint8(2, 0x46) // 'F'
+  view.setUint8(3, 0x46) // 'F'
+  view.setUint32(4, fileSize, true)
+  view.setUint8(8, 0x57)  // 'W'
+  view.setUint8(9, 0x41)  // 'A'
+  view.setUint8(10, 0x56) // 'V'
+  view.setUint8(11, 0x45) // 'E'
+
+  // fmt chunk
+  view.setUint8(12, 0x66) // 'f'
+  view.setUint8(13, 0x6D) // 'm'
+  view.setUint8(14, 0x74) // 't'
+  view.setUint8(15, 0x20) // ' '
+  view.setUint32(16, 16, true) // fmt chunk size
+  view.setUint16(20, 1, true) // audio format (PCM)
+  view.setUint16(22, channels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, byteRate, true)
+  view.setUint16(32, blockAlign, true)
+  view.setUint16(34, bitsPerSample, true)
+
+  // data chunk
+  view.setUint8(36, 0x64) // 'd'
+  view.setUint8(37, 0x61) // 'a'
+  view.setUint8(38, 0x74) // 't'
+  view.setUint8(39, 0x61) // 'a'
+  view.setUint32(40, dataSize, true)
+
+  // Combine header and PCM data
+  const wavFile = new Uint8Array(44 + dataSize)
+  wavFile.set(new Uint8Array(wavHeader), 0)
+  wavFile.set(pcmData, 44)
+
+  return wavFile
+}
+
+/**
+ * Generate audio using Gemini TTS API
+ * Returns WAV audio as Uint8Array binary data
+ */
+async function generateAudio(text: string, apiKey: string, ttsModel: string, voice: string = DEFAULT_VOICE): Promise<Uint8Array> {
+  const url = `${DEFAULT_BASE_URL}/models/${ttsModel}:generateContent?key=${apiKey}`
+  
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      input: { text },
-      voice: {
-        languageCode: "en-US",
-        name: voice,
-        ssmlGender: voice.includes("Neural2-F") ? "FEMALE" : "MALE"
-      },
-      audioConfig: { audioEncoding: "MP3" }
+      contents: [{ parts: [{ text }] }],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: voice
+            }
+          }
+        }
+      }
     })
   })
 
-  if (!response.ok) throw new Error(`TTS API error: ${response.status}`)
+  if (!response.ok) {
+    const errorText = await response.text()
+    logger.error("Gemini TTS API error", { status: response.status, error: errorText })
+    throw new Error(`Gemini TTS API error: ${response.status}`)
+  }
+
   const data = await response.json()
-  return `data:audio/mp3;base64,${data.audioContent}`
+  
+  // Extract audio data from response
+  const inlineData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData
+  if (!inlineData || !inlineData.data) {
+    throw new Error("No audio data in Gemini TTS response")
+  }
+
+  // Decode base64 PCM data
+  const pcmBase64 = inlineData.data
+  const binaryString = atob(pcmBase64)
+  const pcmBytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    pcmBytes[i] = binaryString.charCodeAt(i)
+  }
+
+  // Convert PCM to WAV and return binary data
+  return pcmToWav(pcmBytes)
 }
 
-async function enrichWord(word: string, userId: string, supabaseAdmin: any): Promise<any> {
+/**
+ * Upload audio file to Supabase Storage
+ * Returns public URL of the uploaded file
+ */
+async function uploadAudioToStorage(
+  audioData: Uint8Array,
+  filePath: string,
+  supabaseAdmin: any
+): Promise<string> {
+  const BUCKET_NAME = "vocabulary-audio"
+  
+  // Ensure bucket exists (idempotent)
+  const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets()
+  if (listError) {
+    logger.error("Failed to list buckets", {}, listError as Error)
+    throw new Error("Failed to access storage")
+  }
+  
+  const bucketExists = buckets?.some(b => b.name === BUCKET_NAME)
+  if (!bucketExists) {
+    const { error: createError } = await supabaseAdmin.storage.createBucket(BUCKET_NAME, {
+      public: true,
+      fileSizeLimit: 52428800, // 50MB
+      allowedMimeTypes: ["audio/wav", "audio/wave"]
+    })
+    if (createError) {
+      logger.error("Failed to create bucket", {}, createError as Error)
+      throw new Error("Failed to create storage bucket")
+    }
+    logger.info("Created storage bucket", { bucket: BUCKET_NAME })
+  }
+
+  // Upload file
+  const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+    .from(BUCKET_NAME)
+    .upload(filePath, audioData, {
+      contentType: "audio/wav",
+      upsert: true // Overwrite if exists
+    })
+
+  if (uploadError) {
+    logger.error("Failed to upload audio", { filePath }, uploadError as Error)
+    throw new Error(`Failed to upload audio: ${uploadError.message}`)
+  }
+
+  // Get public URL
+  const { data: urlData } = supabaseAdmin.storage
+    .from(BUCKET_NAME)
+    .getPublicUrl(filePath)
+
+  if (!urlData?.publicUrl) {
+    throw new Error("Failed to get public URL for uploaded audio")
+  }
+
+  logger.info("Audio uploaded successfully", { filePath, url: urlData.publicUrl })
+  return urlData.publicUrl
+}
+
+async function enrichWord(word: string, wordId: string, userId: string, supabaseAdmin: any): Promise<any> {
+  // API Key must be configured in Supabase environment variables
+  const geminiApiKey = Deno.env.get("GEMINI_API_KEY")
+  if (!geminiApiKey) {
+    throw new Error("GEMINI_API_KEY not configured in Supabase environment variables")
+  }
+
+  // Get user's model configuration, fallback to defaults if not found
   const { data: userSettings } = await supabaseAdmin
     .from("user_settings")
-    .select("gemini_model_config, llm_api_key_encrypted, llm_provider")
+    .select("gemini_model_config")
     .eq("user_id", userId)
     .single()
-
-  if (!userSettings) throw new Error("User settings not found")
-
-  let geminiApiKey = Deno.env.get("GEMINI_API_KEY")
-  if (!geminiApiKey) {
-    if (!userSettings.llm_api_key_encrypted) throw new Error("LLM API key not configured")
-    const decrypted = await safeDecrypt(userSettings.llm_api_key_encrypted)
-    geminiApiKey = decrypted || undefined
-  }
-  if (!geminiApiKey) throw new Error("Gemini API key not available")
-
-  const textModelConfig = userSettings.gemini_model_config?.textModel || {}
-  const model = textModelConfig.model || DEFAULT_MODEL
   
-  const prompt = `Analyze "${word}" for IELTS. Return valid JSON: {
-    "definitions": [{"partOfSpeech": "...", "meaning": "..."}],
-    "exampleSentences": [{"sentence": "...", "source": "ielts|daily|movie", "translation": "..."}],
-    "synonyms": [], "antonyms": [], "relatedWords": {}, "easilyConfused": [], "usageFrequency": "...", "tenses": []
-  }. No markdown.`
+  const textModelConfig = userSettings?.gemini_model_config?.textModel || DEFAULT_GEMINI_TEXT_MODEL_CONFIG
+  const ttsModelConfig = userSettings?.gemini_model_config?.ttsModel || DEFAULT_GEMINI_TTS_MODEL_CONFIG
+  const model = textModelConfig.model
+  const ttsModel = ttsModelConfig.model
+
+  const prompt = `
+    Role: Expert IELTS vocabulary tutor.
+    Task: Analyze the English word "${word}" for a student targeting IELTS Band 7+.
+    Requirements:
+    1. Target Language for translations: Chinese (Simplified).
+    2. Focus on Academic/General training definitions suitable for IELTS.
+    3. Ensure example sentences demonstrate Band 7+ complexity and vocabulary usage.
+    4. If the word serves multiple parts of speech, provide the 2 most common ones.
+  `;
 
   const url = `${DEFAULT_BASE_URL}/models/${model}:generateContent?key=${geminiApiKey}`
   const response = await fetch(url, {
@@ -294,33 +570,61 @@ async function enrichWord(word: string, userId: string, supabaseAdmin: any): Pro
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json" }
-    })
-  })
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        temperature: textModelConfig.temperature,
+        topK: textModelConfig.topK,
+        topP: textModelConfig.topP,
+        maxOutputTokens: textModelConfig.maxOutputTokens,
+      },
+    }),
+  });
 
   if (!response.ok) throw new Error(`Gemini API error: ${response.status}`)
   const data = await response.json()
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text
+  if (!content && data.candidates?.[0]?.finishReason) {
+    throw new Error(`Gemini blocked content: ${data.candidates[0].finishReason}`);
+  }
   if (!content) throw new Error("No content from Gemini")
   
-  const wordData = JSON.parse(content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim())
+  let wordData: WordAnalysisResult;
+  try {
+    const cleanContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    wordData = JSON.parse(cleanContent);
+  } catch (e) {
+    logger.warn("JSON Parse Error:", content);
+    throw new Error("Failed to parse Gemini response");
+  }
 
-  // Audio
+  // Generate and upload audio files to Storage
   let wordAudioUrl = null
   let exampleAudioUrls = null
   try {
-    wordAudioUrl = await generateAudio(word, geminiApiKey)
-    if (wordData.exampleSentences) {
-      exampleAudioUrls = await Promise.all(wordData.exampleSentences.map(async (ex: any) => {
-        try {
-          return { sentence: ex.sentence, audio_url: await generateAudio(ex.sentence, geminiApiKey) }
-        } catch {
-          return { sentence: ex.sentence, audio_url: "" }
-        }
-      }))
+    // Generate word audio
+    const wordAudioData = await generateAudio(word, geminiApiKey, ttsModel)
+    const wordStoragePath = `${userId}/${wordId}/word.wav`
+    wordAudioUrl = await uploadAudioToStorage(wordAudioData, wordStoragePath, supabaseAdmin)
+    
+    // Generate example sentence audios
+    if (wordData.exampleSentences && wordData.exampleSentences.length > 0) {
+      exampleAudioUrls = await Promise.all(
+        wordData.exampleSentences.map(async (ex: any, index: number) => {
+          try {
+            const exampleAudioData = await generateAudio(ex.sentence, geminiApiKey, ttsModel)
+            const exampleStoragePath = `${userId}/${wordId}/example-${index}.wav`
+            const audioUrl = await uploadAudioToStorage(exampleAudioData, exampleStoragePath, supabaseAdmin)
+            return { sentence: ex.sentence, audio_url: audioUrl }
+          } catch (error) {
+            logger.warn("Failed to generate/upload example audio", { index, sentence: ex.sentence }, error as Error)
+            return { sentence: ex.sentence, audio_url: "" }
+          }
+        })
+      )
     }
   } catch (e) {
-    logger.warn("Audio failed", {}, e as Error)
+    logger.warn("Audio generation/upload failed", { wordId }, e as Error)
   }
 
   return { wordData, wordAudioUrl, exampleAudioUrls }

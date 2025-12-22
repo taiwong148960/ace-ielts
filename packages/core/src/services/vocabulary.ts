@@ -266,14 +266,10 @@ export async function updateBookSettings(
   logger.info("Updating book settings via Edge Function", { userId, bookId })
 
   try {
+    // Pass full configuration directly (all fields are required)
     const data = await fetchEdge<BookSettings>("vocabulary-books", `/${bookId}/settings`, {
       method: "PATCH",
-      body: {
-        daily_new_limit: input.daily_new_limit,
-        daily_review_limit: input.daily_review_limit,
-        learning_mode: input.learning_mode,
-        study_order: input.study_order
-      }
+      body: input
     })
     logger.info("Book settings updated", { userId, bookId })
     return data

@@ -370,7 +370,6 @@
   "settings": {
     "title": "设置",
     "description": "管理您的账户设置和偏好",
-    "notAvailableInSaaS": "设置功能在SaaS模式下不可用。请使用自托管模式来配置API密钥。",
     "save": "保存",
     "saving": "保存中...",
     "saved": "设置保存成功",
@@ -379,17 +378,6 @@
       "description": "选择您偏好的LLM提供商用于词汇丰富化",
       "label": "提供商",
       "hint": "选择要使用的LLM提供商。目前仅完整支持Gemini。"
-    },
-    "llmApiKey": {
-      "title": "LLM API密钥",
-      "description": "配置您的LLM API密钥用于词汇丰富化（仅限自托管模式）",
-      "label": "API密钥",
-      "placeholder": "输入您的Gemini API密钥",
-      "hint": "您的API密钥将被加密并安全存储。它将用于为词汇添加释义、例句等内容。",
-      "configured": "API密钥已配置",
-      "saved": "API密钥保存成功",
-      "show": "显示",
-      "hide": "隐藏"
     },
     "geminiConfig": {
       "title": "Gemini模型配置",

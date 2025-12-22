@@ -1,17 +1,15 @@
 /**
  * Settings Page
- * User settings including LLM API key configuration, provider selection, and model settings (self-hosted mode only)
+ * User settings including provider selection and model settings
  */
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import {
   Settings as SettingsIcon,
-  Key,
   Save,
   AlertCircle,
   CheckCircle2,
-  Brain,
   Sparkles
 } from "lucide-react"
 import {
@@ -19,9 +17,7 @@ import {
   useAuth,
   useUserSettings,
   useNavigation,
-  isSelfHostedMode,
   createLogger,
-  type LLMProvider,
   type GeminiTextModel,
   type GeminiTTSModel,
   DEFAULT_GEMINI_TEXT_MODEL_CONFIG,
@@ -55,16 +51,12 @@ export function Settings() {
   const {
     settings,
     isLoading,
-    apiKey: storedApiKey,
     updateSettings,
     isUpdating,
     updateError
   } = useUserSettings(user?.id ?? null)
 
-  const [apiKey, setApiKey] = useState("")
-  const [showApiKey, setShowApiKey] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
-  const [llmProvider, setLlmProvider] = useState<LLMProvider>("gemini")
 
   // Gemini model configuration state
   const [textModel, setTextModel] = useState<GeminiTextModel>(
@@ -82,45 +74,28 @@ export function Settings() {
     DEFAULT_GEMINI_TTS_MODEL_CONFIG.model
   )
 
-  const isSelfHosted = isSelfHostedMode()
-
   // Load stored settings into form fields
   useEffect(() => {
-    if (settings && !isLoading) {
-      // Load API key (will be loaded separately by hook)
-      if (storedApiKey !== undefined) {
-        setApiKey(storedApiKey || "")
+    if (settings && !isLoading && settings.gemini_model_config) {
+      const config = settings.gemini_model_config
+      // Full configuration is required, merge with defaults for backward compatibility
+      const textModelConfig = {
+        ...DEFAULT_GEMINI_TEXT_MODEL_CONFIG,
+        ...config.textModel
       }
-
-      // Load LLM provider
-      if (settings.llm_provider) {
-        setLlmProvider(settings.llm_provider)
+      const ttsModelConfig = {
+        ...DEFAULT_GEMINI_TTS_MODEL_CONFIG,
+        ...config.ttsModel
       }
-
-      // Load Gemini model configuration
-      if (settings.gemini_model_config) {
-        const config = settings.gemini_model_config
-        if (config.textModel?.model) {
-          setTextModel(config.textModel.model)
-        }
-        if (config.textModel?.temperature !== undefined) {
-          setTemperature(config.textModel.temperature)
-        }
-        if (config.textModel?.topK !== undefined) {
-          setTopK(config.textModel.topK)
-        }
-        if (config.textModel?.topP !== undefined) {
-          setTopP(config.textModel.topP)
-        }
-        if (config.textModel?.maxOutputTokens !== undefined) {
-          setMaxOutputTokens(config.textModel.maxOutputTokens)
-        }
-        if (config.ttsModel?.model) {
-          setTtsModel(config.ttsModel.model)
-        }
-      }
+      
+      setTextModel(textModelConfig.model)
+      setTemperature(textModelConfig.temperature ?? 0.7)
+      setTopK(textModelConfig.topK ?? 40)
+      setTopP(textModelConfig.topP ?? 0.95)
+      setMaxOutputTokens(textModelConfig.maxOutputTokens ?? 2048)
+      setTtsModel(ttsModelConfig.model)
     }
-  }, [settings, storedApiKey, isLoading])
+  }, [settings, isLoading])
 
   const handleNavigate = (itemId: string) => {
     if (itemId === "settings") {
@@ -138,6 +113,7 @@ export function Settings() {
 
   const handleSave = async () => {
     try {
+      // Build complete Gemini model configuration (all fields required)
       const geminiConfig: GeminiModelConfig = {
         textModel: {
           model: textModel,
@@ -151,9 +127,9 @@ export function Settings() {
         }
       }
 
+      // Always send full configuration
       await updateSettings({
-        llm_api_key: apiKey.trim() || undefined,
-        llm_provider: llmProvider,
+        llm_provider: "gemini",
         gemini_model_config: geminiConfig
       })
       setSaveSuccess(true)
@@ -161,31 +137,6 @@ export function Settings() {
     } catch (error) {
       logger.error("Error saving settings", { userId: user?.id }, error instanceof Error ? error : new Error(String(error)))
     }
-  }
-
-  // Don't show settings in SaaS mode
-  if (!isSelfHosted) {
-    return (
-      <MainLayout activeNav="settings" onNavigate={handleNavigate}>
-        <motion.div
-          className="max-w-4xl mx-auto"
-          variants={fadeInUp}
-          initial="hidden"
-          animate="visible"
-        >
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center py-12">
-                <SettingsIcon className="h-16 w-16 mx-auto text-text-tertiary mb-4" />
-                <p className="text-text-secondary">
-                  {t("settings.notAvailableInSaaS")}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </MainLayout>
-    )
   }
 
   if (isLoading) {
@@ -222,88 +173,8 @@ export function Settings() {
           </p>
         </div>
 
-        {/* LLM Provider Selection */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Brain className="h-5 w-5 text-primary" />
-              {t("settings.llmProvider.title")}
-            </CardTitle>
-            <CardDescription>
-              {t("settings.llmProvider.description")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="llm-provider">
-                {t("settings.llmProvider.label")}
-              </Label>
-              <Select value={llmProvider} onValueChange={(value: LLMProvider) => setLlmProvider(value)}>
-                <SelectTrigger id="llm-provider" disabled={isUpdating}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="gemini">Gemini</SelectItem>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                  <SelectItem value="anthropic">Anthropic</SelectItem>
-                  <SelectItem value="azure-openai">Azure OpenAI</SelectItem>
-                  <SelectItem value="custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-text-tertiary">
-                {t("settings.llmProvider.hint")}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* LLM API Key Configuration */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Key className="h-5 w-5 text-primary" />
-              {t("settings.llmApiKey.title")}
-            </CardTitle>
-            <CardDescription>
-              {t("settings.llmApiKey.description")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* API Key Input */}
-            <div className="space-y-2">
-              <Label htmlFor="api-key">
-                {t("settings.llmApiKey.label")}
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="api-key"
-                  type={showApiKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={t("settings.llmApiKey.placeholder")}
-                  disabled={isUpdating || isLoading}
-                  className="font-mono"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  disabled={isUpdating || isLoading}
-                >
-                  {showApiKey ? t("settings.llmApiKey.hide") : t("settings.llmApiKey.show")}
-                </Button>
-              </div>
-              <p className="text-xs text-text-tertiary">
-                {t("settings.llmApiKey.hint")}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Gemini Model Configuration */}
-        {llmProvider === "gemini" && (
-          <Card>
+        <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-ai" />
@@ -333,10 +204,8 @@ export function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gemini-3-pro-preview">Gemini 3 Pro Preview</SelectItem>
-                      <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                      <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
-                      <SelectItem value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</SelectItem>
+                      <SelectItem value="gemini-3-flash">Gemini 3 Flash</SelectItem>
+                      <SelectItem value="gemini-3-pro">Gemini 3 Pro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -440,8 +309,8 @@ export function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gemini-2.5-pro-preview-tts">Gemini 2.5 Pro Preview TTS</SelectItem>
-                      <SelectItem value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash Preview TTS</SelectItem>
+                      <SelectItem value="gemini-2.5-flash-tts">Gemini 2.5 Flash TTS</SelectItem>
+                      <SelectItem value="gemini-2.5-pro-tts">Gemini 2.5 Pro TTS</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-text-tertiary">
@@ -451,7 +320,6 @@ export function Settings() {
               </div>
             </CardContent>
           </Card>
-        )}
 
         {/* Error Message */}
         {updateError && (

@@ -60,8 +60,6 @@ export {
 export {
   getUserSettings,
   getOrCreateUserSettings,
-  updateUserSettings,
-  getLLMApiKey,
-  hasLLMApiKey
+  updateUserSettings
 } from "./user-settings"
 

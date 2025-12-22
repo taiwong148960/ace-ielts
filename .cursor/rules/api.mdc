@@ -1,9 +1,7 @@
 ---
-description: API Design Guidelines - GitHub REST API style, adapted for Supabase Edge Functions
-globs: ["supabase/functions/**/*"]
+globs: supabase/functions/**
 alwaysApply: false
 ---
-
 ## 1. HTTP Method Semantics
 
 Strictly follow HTTP method semantics:

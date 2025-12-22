@@ -379,8 +379,13 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-# [edge_runtime.secrets]
-# secret_key = "env(SECRET_VALUE)"
+[edge_runtime.secrets]
+# GEMINI_API_KEY for AI word enrichment
+gemini_api_key = "env(GEMINI_API_KEY)"
+# ENCRYPTION_KEY for encrypting user data (user API keys, etc.)
+# encryption_key = "env(ENCRYPTION_KEY)"
+# Note: SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY
+# are automatically provided by Supabase CLI in local development
 
 [analytics]
 enabled = true

@@ -70,6 +70,35 @@ export const LEARNING_STEPS: Record<number, number> = {
  */
 export const LEARNING_GRADUATION_STEPS = 2
 
+/**
+ * Default Gemini text model configuration
+ * @sync packages/core/src/types/vocabulary.ts - DEFAULT_GEMINI_TEXT_MODEL_CONFIG
+ */
+export const DEFAULT_GEMINI_TEXT_MODEL_CONFIG = {
+  model: "gemini-3-flash",
+  temperature: 0.7,
+  topK: 40,
+  topP: 0.95,
+  maxOutputTokens: 2048
+}
+
+/**
+ * Default Gemini TTS model configuration
+ * @sync packages/core/src/types/vocabulary.ts - DEFAULT_GEMINI_TTS_MODEL_CONFIG
+ */
+export const DEFAULT_GEMINI_TTS_MODEL_CONFIG = {
+  model: "gemini-2.5-flash-tts"
+}
+
+/**
+ * Default Gemini model configuration for user settings
+ * @sync packages/core/src/types/vocabulary.ts and packages/ui/src/pages/Settings.tsx
+ */
+export const DEFAULT_GEMINI_MODEL_CONFIG = {
+  textModel: DEFAULT_GEMINI_TEXT_MODEL_CONFIG,
+  ttsModel: DEFAULT_GEMINI_TTS_MODEL_CONFIG
+}
+
 // ============================================================================
 // Input Types for Edge Functions
 // ============================================================================

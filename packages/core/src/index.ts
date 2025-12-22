@@ -16,7 +16,7 @@ export * from "./utils"
 // Hooks
 export * from "./hooks"
 
-// Config (Deployment modes, feature flags)
+// Config
 export * from "./config"
 
 // TanStack Query
