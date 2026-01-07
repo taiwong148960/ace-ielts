@@ -192,7 +192,14 @@
       "mastered": "已掌握",
       "learning": "学习中",
       "new": "未学习",
-      "forgettingCurve": "遗忘曲线",
+      "forgettingCurve": {
+        "title": "遗忘曲线",
+        "retentionCurve": "记忆曲线",
+        "upcomingReviews": "待复习",
+        "wordsToReview": "{{count}} 个待复习",
+        "noData": "开始学习后查看遗忘曲线",
+        "retentionRate": "{{rate}}% 保持率"
+      },
       "retentionProbability": "记忆保持概率",
       "fsrsHint": "基于 FSRS-4.5 间隔重复算法",
       "xAxisLabel": "天数",
@@ -252,6 +259,8 @@
       }
     },
     "learning": {
+      "title": "学习模式",
+      "loading": "正在加载学习模式...",
       "wordCard": "单词卡片",
       "pronunciation": "发音",
       "coreDefinition": "核心释义",
@@ -259,8 +268,8 @@
       "etymology": "词根词缀拆解",
       "synonyms": "同义词",
       "antonyms": "反义词",
-      "videoExamples": "YouGlish 视频例句",
-      "prevNext": "上一个 / 下一个例句",
+      "collocations": "常见搭配",
+      "topic": "话题",
       "spacedRepetition": "间隔重复反馈区",
       "forgot": "完全忘记",
       "hard": "有点吃力",
@@ -276,7 +285,12 @@
       "complete": "本轮学习完成！",
       "wordsReviewed": "已复习单词",
       "accuracy": "正确率",
-      "finishSession": "结束学习"
+      "finishSession": "结束学习",
+      "sessionComplete": "学习完成！",
+      "sessionCompleteDesc": "太棒了！你已完成本次学习任务。",
+      "backToBook": "返回词本",
+      "noWordsToReview": "暂无待复习单词！",
+      "noWordsToReviewDesc": "你已复习完所有到期单词，稍后再来练习吧！"
     }
   },
   "dashboard": {

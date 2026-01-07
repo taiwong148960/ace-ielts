@@ -21,6 +21,7 @@ router.post("/review", handleProcessReview);
 router.get("/recent", handleGetRecent);
 router.get("/difficult", handleGetDifficult);
 router.post("/init", handleInitProgress);
+router.get("/stats/forgetting-curve", handleGetForgettingCurveStats);
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -461,6 +462,182 @@ async function handleInitProgress(req: Request) {
 
   if (error) return errorResponse("Failed to init progress", 500);
   return successResponse(progress);
+}
+
+/**
+ * Get forgetting curve statistics for visualization
+ * Returns: mastery distribution, average stability, stability distribution, upcoming reviews
+ */
+async function handleGetForgettingCurveStats(req: Request) {
+  const { user, supabaseAdmin } = await initSupabase(
+    req.headers.get("Authorization"),
+  );
+  const url = new URL(req.url);
+  const bookId = url.searchParams.get("bookId");
+
+  logger.info("Fetching forgetting curve stats", { userId: user.id, bookId });
+
+  if (!bookId) return errorResponse("Book ID is required", 400);
+
+  // Verify access
+  const { data: book } = await supabaseAdmin
+    .from("vocabulary_books")
+    .select("id, user_id, is_system_book, word_count")
+    .eq("id", bookId)
+    .single();
+
+  if (!book) return errorResponse("Book not found", 404);
+  if (!book.is_system_book && book.user_id !== user.id) {
+    return errorResponse("Forbidden", 403);
+  }
+
+  // Get all word progress for this book
+  const { data: progressData, error: progressError } = await supabaseAdmin
+    .from("vocabulary_user_word_progress")
+    .select("state, stability, due_at, last_review_at")
+    .eq("user_id", user.id)
+    .eq("book_id", bookId);
+
+  if (progressError) {
+    logger.error(
+      "Failed to fetch word progress",
+      { userId: user.id, bookId },
+      new Error(progressError.message),
+    );
+    return errorResponse("Failed to fetch statistics", 500);
+  }
+
+  const progress = progressData || [];
+  const now = new Date();
+
+  // Calculate mastery distribution
+  const masteryDistribution = {
+    new: book.word_count - progress.length, // Words not yet started
+    learning: 0,
+    mastered: 0,
+  };
+
+  // Calculate stability sums for averaging
+  let learningStabilitySum = 0;
+  let learningCount = 0;
+  let masteredStabilitySum = 0;
+  let masteredCount = 0;
+
+  // Stability distribution buckets
+  const stabilityBuckets = {
+    "0-7": 0,
+    "8-14": 0,
+    "15-30": 0,
+    "31+": 0,
+  };
+
+  // Upcoming reviews (next 7 days)
+  const upcomingReviewsMap = new Map<string, number>();
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(now);
+    date.setDate(date.getDate() + i);
+    upcomingReviewsMap.set(date.toISOString().split("T")[0], 0);
+  }
+
+  // Process each word progress
+  interface ProgressRow {
+    state: string;
+    stability: number;
+    due_at: string | null;
+    last_review_at: string | null;
+  }
+
+  for (const p of progress as ProgressRow[]) {
+    const stability = p.stability || 0;
+    const state = p.state;
+
+    // Mastery classification based on state and stability
+    if (state === "review" && stability > 21) {
+      masteryDistribution.mastered++;
+      masteredStabilitySum += stability;
+      masteredCount++;
+    } else if (state !== "new") {
+      masteryDistribution.learning++;
+      learningStabilitySum += stability;
+      learningCount++;
+    }
+
+    // Stability distribution
+    if (stability <= 7) {
+      stabilityBuckets["0-7"]++;
+    } else if (stability <= 14) {
+      stabilityBuckets["8-14"]++;
+    } else if (stability <= 30) {
+      stabilityBuckets["15-30"]++;
+    } else {
+      stabilityBuckets["31+"]++;
+    }
+
+    // Upcoming reviews
+    if (p.due_at) {
+      const dueDate = new Date(p.due_at);
+      const dueDateStr = dueDate.toISOString().split("T")[0];
+      if (upcomingReviewsMap.has(dueDateStr)) {
+        upcomingReviewsMap.set(
+          dueDateStr,
+          (upcomingReviewsMap.get(dueDateStr) || 0) + 1,
+        );
+      } else if (dueDate <= now) {
+        // Overdue words count as today
+        const todayStr = now.toISOString().split("T")[0];
+        upcomingReviewsMap.set(
+          todayStr,
+          (upcomingReviewsMap.get(todayStr) || 0) + 1,
+        );
+      }
+    }
+  }
+
+  // Calculate average stability
+  const averageStability = {
+    new: 2, // Default for new words
+    learning: learningCount > 0
+      ? Math.round(learningStabilitySum / learningCount)
+      : 7,
+    mastered: masteredCount > 0
+      ? Math.round(masteredStabilitySum / masteredCount)
+      : 30,
+  };
+
+  // Convert stability distribution to array format
+  const stabilityDistribution = Object.entries(stabilityBuckets).map((
+    [range, count],
+  ) => ({
+    range,
+    count,
+  }));
+
+  // Convert upcoming reviews to array format
+  const upcomingReviews = Array.from(upcomingReviewsMap.entries()).map((
+    [date, count],
+  ) => ({
+    date,
+    count,
+  }));
+
+  // Calculate current retention rate
+  const totalReviewed =
+    progress.filter((p: ProgressRow) => p.last_review_at !== null).length;
+  const notOverdue = progress.filter((p: ProgressRow) => {
+    if (!p.due_at) return false;
+    return new Date(p.due_at) >= now;
+  }).length;
+  const currentRetentionRate = totalReviewed > 0
+    ? Math.round((notOverdue / totalReviewed) * 100)
+    : 100;
+
+  return successResponse({
+    masteryDistribution,
+    averageStability,
+    stabilityDistribution,
+    upcomingReviews,
+    currentRetentionRate,
+  });
 }
 
 // Helper Functions

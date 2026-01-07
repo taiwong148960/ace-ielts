@@ -437,6 +437,40 @@ export interface SchedulingResult {
 }
 
 /**
+ * Forgetting curve statistics for visualization
+ */
+export interface ForgettingCurveStats {
+  /** Word counts by mastery level */
+  masteryDistribution: {
+    new: number;
+    learning: number;
+    mastered: number;
+  };
+
+  /** Average stability (in days) by mastery level */
+  averageStability: {
+    new: number; // Always ~2 days
+    learning: number; // Typically 3-21 days
+    mastered: number; // >21 days
+  };
+
+  /** Word counts by stability ranges (for histogram) */
+  stabilityDistribution: {
+    range: string; // e.g., "0-7", "8-14", "15-30", "31+"
+    count: number;
+  }[];
+
+  /** Upcoming reviews by day (next 7 days) */
+  upcomingReviews: {
+    date: string; // ISO date string
+    count: number;
+  }[];
+
+  /** Overall retention rate (words not overdue / total reviewed) */
+  currentRetentionRate: number;
+}
+
+/**
  * Study order type
  */
 export type StudyOrder = "sequential" | "random";

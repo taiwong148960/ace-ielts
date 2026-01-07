@@ -23,6 +23,8 @@ import {
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -39,7 +41,8 @@ import {
   useAuth,
   useVocabularyImport,
   type BookDetailStats,
-  type ImportStatus
+  type ImportStatus,
+  type ForgettingCurveStats
 } from "@ace-ielts/core"
 
 import { MainLayout } from "../../layout"
@@ -162,35 +165,52 @@ function WordListItem({
 }
 
 function ForgettingCurveChart({
-  masteredS = 30,
-  learningS = 7,
-  newS = 2,
+  stats,
   days = 30
 }: {
-  masteredS?: number
-  learningS?: number
-  newS?: number
+  stats: ForgettingCurveStats | null
   days?: number
 }) {
   const { t } = useTranslation()
+  const [activeTab, setActiveTab] = useState<"curve" | "reviews">("curve")
+
+  // Use real data or fallback to defaults
+  const masteredS = stats?.averageStability.mastered ?? 30
+  const learningS = stats?.averageStability.learning ?? 7
+  const newS = stats?.averageStability.new ?? 2
 
   // Calculate retention data points
   const retention = (d: number, S: number) => Math.exp(-d / S)
-  const data = Array.from({ length: days + 1 }, (_, i) => ({
+  const curveData = Array.from({ length: days + 1 }, (_, i) => ({
     day: i,
     mastered: retention(i, masteredS),
     learning: retention(i, learningS),
     new: retention(i, newS)
   }))
 
-  // Custom tooltip formatter
+  // Format upcoming reviews for bar chart
+  const upcomingReviewsData = useMemo(() => {
+    if (!stats?.upcomingReviews) return []
+    return stats.upcomingReviews.map((r, index) => {
+      const date = new Date(r.date)
+      const dayLabels = ["Today", "Tomorrow"]
+      const label = index < 2 ? dayLabels[index] : date.toLocaleDateString("en-US", { weekday: "short" })
+      return {
+        day: label,
+        count: r.count,
+        date: r.date
+      }
+    })
+  }, [stats?.upcomingReviews])
+
+  // Custom tooltip for retention curve
   interface TooltipPayloadItem {
     dataKey: string
     value: number
     color: string
     payload: { day: number }
   }
-  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: TooltipPayloadItem[] }) => {
+  const CurveTooltip = ({ active, payload }: { active?: boolean; payload?: TooltipPayloadItem[] }) => {
     if (!active || !payload || payload.length === 0) return null
 
     const day = payload[0].payload.day
@@ -230,74 +250,187 @@ function ForgettingCurveChart({
     )
   }
 
+  // Custom tooltip for upcoming reviews
+  interface ReviewTooltipPayloadItem {
+    value: number
+    payload: { day: string; date: string }
+  }
+  const ReviewTooltip = ({ active, payload }: { active?: boolean; payload?: ReviewTooltipPayloadItem[] }) => {
+    if (!active || !payload || payload.length === 0) return null
+    const data = payload[0]
+    return (
+      <div className="bg-white border border-neutral-border rounded-lg shadow-lg p-2">
+        <p className="text-sm font-medium text-text-primary">{data.payload.day}</p>
+        <p className="text-xs text-text-secondary">
+          {t("vocabulary.bookDetail.forgettingCurve.wordsToReview", { count: data.value })}
+        </p>
+      </div>
+    )
+  }
+
+  // Check if we have any learning data
+  const hasData = stats && (
+    stats.masteryDistribution.learning > 0 || 
+    stats.masteryDistribution.mastered > 0
+  )
+
   return (
-    <div className="w-full h-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 5, right: 15, left: 5, bottom: 20 }}>
-          <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" />
-          <XAxis
-            dataKey="day"
-            label={{
-              value: t("vocabulary.bookDetail.xAxisLabel"),
-              position: "insideBottom",
-              offset: -3,
-              style: { textAnchor: "middle", fill: "#6b7280", fontSize: 11 }
-            }}
-            stroke="#9ca3af"
-            tick={{ fill: "#6b7280", fontSize: 11 }}
-            domain={[0, days]}
-          />
-          <YAxis
-            label={{
-              value: t("vocabulary.bookDetail.yAxisLabel"),
-              angle: -90,
-              position: "insideLeft",
-              style: { textAnchor: "middle", fill: "#6b7280", fontSize: 11 }
-            }}
-            stroke="#9ca3af"
-            tick={{ fill: "#6b7280", fontSize: 11 }}
-            domain={[0, 1]}
-            tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
-          />
-          <RechartsTooltip content={<CustomTooltip />} />
-          <Legend
-            wrapperStyle={{ paddingTop: "10px" }}
-            iconType="line"
-            formatter={(value) => {
-              const labelMap: Record<string, string> = {
-                mastered: t("vocabulary.bookDetail.mastered"),
-                learning: t("vocabulary.bookDetail.learning"),
-                new: t("vocabulary.bookDetail.new")
-              }
-              return labelMap[value] || value
-            }}
-          />
-          <Line
-            type="monotone"
-            dataKey="mastered"
-            stroke="#059669"
-            strokeWidth={2}
-            dot={false}
-            name="mastered"
-          />
-          <Line
-            type="monotone"
-            dataKey="learning"
-            stroke="#d97706"
-            strokeWidth={2}
-            dot={false}
-            name="learning"
-          />
-          <Line
-            type="monotone"
-            dataKey="new"
-            stroke="#475569"
-            strokeWidth={2}
-            dot={false}
-            name="new"
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="w-full h-full flex flex-col">
+      {/* Tab buttons */}
+      <div className="flex gap-1 mb-3">
+        <button
+          onClick={() => setActiveTab("curve")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+            activeTab === "curve"
+              ? "bg-primary text-white"
+              : "bg-neutral-muted text-text-secondary hover:bg-neutral-hover"
+          )}
+        >
+          {t("vocabulary.bookDetail.forgettingCurve.retentionCurve")}
+        </button>
+        <button
+          onClick={() => setActiveTab("reviews")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+            activeTab === "reviews"
+              ? "bg-primary text-white"
+              : "bg-neutral-muted text-text-secondary hover:bg-neutral-hover"
+          )}
+        >
+          {t("vocabulary.bookDetail.forgettingCurve.upcomingReviews")}
+        </button>
+      </div>
+
+      {/* Stats summary */}
+      {stats && (
+        <div className="flex gap-4 mb-3 text-xs">
+          <div className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="text-text-secondary">
+              {t("vocabulary.bookDetail.mastered")}: {stats.masteryDistribution.mastered}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+            <span className="text-text-secondary">
+              {t("vocabulary.bookDetail.learning")}: {stats.masteryDistribution.learning}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-full bg-slate-400" />
+            <span className="text-text-secondary">
+              {t("vocabulary.bookDetail.new")}: {stats.masteryDistribution.new}
+            </span>
+          </div>
+          {stats.currentRetentionRate < 100 && (
+            <div className="ml-auto text-text-tertiary">
+              {t("vocabulary.bookDetail.forgettingCurve.retentionRate", { rate: stats.currentRetentionRate })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Chart content */}
+      <div className="flex-1 min-h-0">
+        {!hasData ? (
+          <div className="h-full flex items-center justify-center">
+            <p className="text-sm text-text-tertiary">
+              {t("vocabulary.bookDetail.forgettingCurve.noData")}
+            </p>
+          </div>
+        ) : activeTab === "curve" ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={curveData} margin={{ top: 5, right: 15, left: 5, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" />
+              <XAxis
+                dataKey="day"
+                label={{
+                  value: t("vocabulary.bookDetail.xAxisLabel"),
+                  position: "insideBottom",
+                  offset: -3,
+                  style: { textAnchor: "middle", fill: "#6b7280", fontSize: 11 }
+                }}
+                stroke="#9ca3af"
+                tick={{ fill: "#6b7280", fontSize: 11 }}
+                domain={[0, days]}
+              />
+              <YAxis
+                label={{
+                  value: t("vocabulary.bookDetail.yAxisLabel"),
+                  angle: -90,
+                  position: "insideLeft",
+                  style: { textAnchor: "middle", fill: "#6b7280", fontSize: 11 }
+                }}
+                stroke="#9ca3af"
+                tick={{ fill: "#6b7280", fontSize: 11 }}
+                domain={[0, 1]}
+                tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
+              />
+              <RechartsTooltip content={<CurveTooltip />} />
+              <Legend
+                wrapperStyle={{ paddingTop: "10px" }}
+                iconType="line"
+                formatter={(value) => {
+                  const labelMap: Record<string, string> = {
+                    mastered: t("vocabulary.bookDetail.mastered"),
+                    learning: t("vocabulary.bookDetail.learning"),
+                    new: t("vocabulary.bookDetail.new")
+                  }
+                  return labelMap[value] || value
+                }}
+              />
+              <Line
+                type="monotone"
+                dataKey="mastered"
+                stroke="#059669"
+                strokeWidth={2}
+                dot={false}
+                name="mastered"
+              />
+              <Line
+                type="monotone"
+                dataKey="learning"
+                stroke="#d97706"
+                strokeWidth={2}
+                dot={false}
+                name="learning"
+              />
+              <Line
+                type="monotone"
+                dataKey="new"
+                stroke="#475569"
+                strokeWidth={2}
+                dot={false}
+                name="new"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={upcomingReviewsData} margin={{ top: 5, right: 15, left: 5, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" />
+              <XAxis
+                dataKey="day"
+                stroke="#9ca3af"
+                tick={{ fill: "#6b7280", fontSize: 11 }}
+              />
+              <YAxis
+                stroke="#9ca3af"
+                tick={{ fill: "#6b7280", fontSize: 11 }}
+                allowDecimals={false}
+              />
+              <RechartsTooltip content={<ReviewTooltip />} />
+              <Bar
+                dataKey="count"
+                fill="#0d9488"
+                radius={[4, 4, 0, 0]}
+                name="words"
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
     </div>
   )
 }
@@ -367,6 +500,7 @@ export function VocabularyBookDetail() {
     recentWords,
     difficultWords,
     todaySession,
+    forgettingCurveStats,
     isLoading,
     error,
     refetch,
@@ -443,16 +577,6 @@ export function VocabularyBookDetail() {
     () => difficultWords.map(formatWordForDisplay),
     [difficultWords]
   )
-
-  // Calculate average stability for chart
-  const chartStability = useMemo(() => {
-    if (!stats) return { mastered: 30, learning: 7, new: 2 }
-    return {
-      mastered: Math.max(21, stats.averageStability * 1.5),
-      learning: Math.max(3, stats.averageStability * 0.5),
-      new: 2
-    }
-  }, [stats])
 
   const handleBack = () => {
     navigation.navigate("/vocabulary")
@@ -768,18 +892,13 @@ export function VocabularyBookDetail() {
             <CardHeader className="pb-1">
               <CardTitle className="text-base flex items-center gap-2">
                 <Target className="h-4 w-4 text-primary" />
-                {t("vocabulary.bookDetail.forgettingCurve")}
+                {t("vocabulary.bookDetail.forgettingCurve.title")}
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-2 pb-4 flex-1 flex flex-col min-h-0">
-              <div className="mb-2 text-xs text-text-secondary">
-                {t("vocabulary.bookDetail.retentionProbability")}
-              </div>
-              <div className="flex-1 min-h-[280px]">
+              <div className="flex-1 min-h-[320px]">
                 <ForgettingCurveChart
-                  masteredS={chartStability.mastered}
-                  learningS={chartStability.learning}
-                  newS={chartStability.new}
+                  stats={forgettingCurveStats}
                   days={30}
                 />
               </div>

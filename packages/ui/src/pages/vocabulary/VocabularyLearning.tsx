@@ -11,12 +11,7 @@ import {
   BookOpen,
   CheckCircle2,
   Loader2,
-  Maximize2,
   Newspaper,
-  Pause,
-  Play,
-  SkipBack,
-  SkipForward,
   Tv,
   Volume2,
   PartyPopper
@@ -67,94 +62,7 @@ function getAudioUrl(path: string | null | undefined): string | null {
   return data.publicUrl
 }
 
-/**
- * Audio player component for YouGlish-style video (placeholder)
- */
-function VideoPlayerPlaceholder() {
-  const { t } = useTranslation()
-  const [isPlaying, setIsPlaying] = useState(false)
 
-  return (
-    <Card className="bg-neutral-background border border-neutral-border">
-      <CardContent className="pt-4">
-        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
-          {t("vocabulary.learning.videoExamples")}
-        </h3>
-
-        {/* Video Placeholder */}
-        <div className="relative bg-slate-900 rounded-lg overflow-hidden aspect-video mb-3">
-          {/* Waveform visualization placeholder */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="flex items-end gap-1 h-16">
-              {Array.from({ length: 40 }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  className="w-1 bg-emerald-400/60 rounded-full"
-                  animate={{
-                    height: isPlaying
-                      ? [8, Math.random() * 60 + 8, 8]
-                      : 8
-                  }}
-                  transition={{
-                    duration: 0.5,
-                    repeat: isPlaying ? Infinity : 0,
-                    delay: i * 0.02
-                  }}
-                  style={{ height: 8 }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* YouGlish branding */}
-          <div className="absolute top-3 right-3 text-white/60 text-xs font-medium">
-            YouGlish
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setIsPlaying(!isPlaying)}
-            >
-              {isPlaying ? (
-                <Pause className="h-4 w-4" />
-              ) : (
-                <Play className="h-4 w-4" />
-              )}
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <Volume2 className="h-4 w-4" />
-            </Button>
-            <span className="text-xs text-text-secondary ml-2">0:09 /s</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <SkipBack className="h-4 w-4" />
-            </Button>
-            <span className="text-xs text-text-secondary">
-              {t("vocabulary.learning.prevNext")}
-            </span>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <SkipForward className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 ml-2">
-              <span className="text-[10px] font-bold border border-current rounded px-1">CC</span>
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <Maximize2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
 
 /**
  * Spaced repetition grading buttons
@@ -749,9 +657,6 @@ export function VocabularyLearning() {
                 />
               </motion.div>
             </AnimatePresence>
-
-            {/* YouGlish Video Player */}
-            <VideoPlayerPlaceholder />
 
             {/* Spaced Repetition Grading */}
             <SpacedRepetitionGrading 

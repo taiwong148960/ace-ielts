@@ -3,21 +3,25 @@
  * Handles book detail page data, learning sessions, and spaced repetition
  */
 
-import { isSupabaseInitialized } from "./supabase"
+import { isSupabaseInitialized } from "./supabase";
 import type {
-  VocabularyBook,
-  UserWordProgress,
-  UserBookProgress,
   BookDetailStats,
-  WordWithProgress,
+  ForgettingCurveStats,
   TodayLearningSession,
-} from "../types/vocabulary"
-import { GRADE_TO_RATING, type SpacedRepetitionGrade } from "../types/vocabulary"
-import { createLogger } from "../utils/logger"
-import { fetchEdge } from "../utils/edge-client"
+  UserBookProgress,
+  UserWordProgress,
+  VocabularyBook,
+  WordWithProgress,
+} from "../types/vocabulary";
+import {
+  GRADE_TO_RATING,
+  type SpacedRepetitionGrade,
+} from "../types/vocabulary";
+import { createLogger } from "../utils/logger";
+import { fetchEdge } from "../utils/edge-client";
 
 // Create logger for this service
-const logger = createLogger("VocabularyDetailService")
+const logger = createLogger("VocabularyDetailService");
 
 /**
  * Get a book with full details for the book detail page
@@ -25,27 +29,36 @@ const logger = createLogger("VocabularyDetailService")
  */
 export async function getBookWithDetails(
   bookId: string,
-  userId: string
-): Promise<{
-  book: VocabularyBook
-  progress: UserBookProgress | null
-  stats: BookDetailStats
-} | null> {
+  userId: string,
+): Promise<
+  {
+    book: VocabularyBook;
+    progress: UserBookProgress | null;
+    stats: BookDetailStats;
+  } | null
+> {
   if (!isSupabaseInitialized()) {
-    logger.warn("Supabase not initialized", { operation: "getBookWithDetails" })
-    return null
+    logger.warn("Supabase not initialized", {
+      operation: "getBookWithDetails",
+    });
+    return null;
   }
 
-  logger.debug("Fetching book details via Edge Function", { bookId, userId })
+  logger.debug("Fetching book details via Edge Function", { bookId, userId });
 
   try {
-    const book = await fetchEdge<VocabularyBook>("vocabulary-books", `/${bookId}`)
-    
+    const book = await fetchEdge<VocabularyBook>(
+      "vocabulary-books",
+      `/${bookId}`,
+    );
+
     // We fetch progress as part of the book request in the new API
     // but the frontend type expects it separated.
     // The edge function returns { ...book, progress }
-    const progress = (book as VocabularyBook & { progress?: UserBookProgress }).progress || null
-    
+    const progress =
+      (book as VocabularyBook & { progress?: UserBookProgress }).progress ||
+      null;
+
     // Calculate stats on client or fetch if needed
     // For now we mock empty stats or we could add a stats endpoint
     const stats: BookDetailStats = {
@@ -58,13 +71,17 @@ export async function getBookWithDetails(
       estimatedMinutes: 0,
       streak: progress?.streak_days || 0,
       accuracy: progress?.accuracy_percent || 0,
-      averageStability: 0
-    }
+      averageStability: 0,
+    };
 
-    return { book, progress, stats }
+    return { book, progress, stats };
   } catch (error) {
-    logger.error("Failed to fetch book details", { bookId, userId }, error as Error)
-    return null
+    logger.error(
+      "Failed to fetch book details",
+      { bookId, userId },
+      error as Error,
+    );
+    return null;
   }
 }
 
@@ -76,21 +93,44 @@ export async function getTodayLearningSession(
   bookId: string,
   userId: string,
   newLimit: number = 20,
-  reviewLimit: number = 100
+  reviewLimit: number = 100,
 ): Promise<TodayLearningSession> {
   if (!isSupabaseInitialized()) {
-    return { reviewWords: [], newWords: [], totalCount: 0, estimatedMinutes: 0 }
+    return {
+      reviewWords: [],
+      newWords: [],
+      totalCount: 0,
+      estimatedMinutes: 0,
+    };
   }
 
-  logger.debug("Fetching learning session via Edge Function", { bookId, userId, newLimit, reviewLimit })
+  logger.debug("Fetching learning session via Edge Function", {
+    bookId,
+    userId,
+    newLimit,
+    reviewLimit,
+  });
 
   try {
-    return await fetchEdge<TodayLearningSession>("vocabulary-study", "/session", {
-      query: { bookId, newLimit, reviewLimit }
-    })
+    return await fetchEdge<TodayLearningSession>(
+      "vocabulary-study",
+      "/session",
+      {
+        query: { bookId, newLimit, reviewLimit },
+      },
+    );
   } catch (error) {
-    logger.warn("Failed to get learning session", { bookId, userId }, error as Error)
-    return { reviewWords: [], newWords: [], totalCount: 0, estimatedMinutes: 0 }
+    logger.warn(
+      "Failed to get learning session",
+      { bookId, userId },
+      error as Error,
+    );
+    return {
+      reviewWords: [],
+      newWords: [],
+      totalCount: 0,
+      estimatedMinutes: 0,
+    };
   }
 }
 
@@ -101,19 +141,27 @@ export async function getTodayLearningSession(
 export async function getRecentWords(
   bookId: string,
   userId: string,
-  limit: number = 5
+  limit: number = 5,
 ): Promise<WordWithProgress[]> {
-  if (!isSupabaseInitialized()) return []
+  if (!isSupabaseInitialized()) return [];
 
-  logger.debug("Fetching recent words via Edge Function", { bookId, userId, limit })
+  logger.debug("Fetching recent words via Edge Function", {
+    bookId,
+    userId,
+    limit,
+  });
 
   try {
     return await fetchEdge<WordWithProgress[]>("vocabulary-study", "/recent", {
-      query: { bookId, limit }
-    })
+      query: { bookId, limit },
+    });
   } catch (error) {
-    logger.warn("Failed to get recent words", { bookId, userId }, error as Error)
-    return []
+    logger.warn(
+      "Failed to get recent words",
+      { bookId, userId },
+      error as Error,
+    );
+    return [];
   }
 }
 
@@ -124,19 +172,31 @@ export async function getRecentWords(
 export async function getDifficultWords(
   bookId: string,
   userId: string,
-  limit: number = 5
+  limit: number = 5,
 ): Promise<WordWithProgress[]> {
-  if (!isSupabaseInitialized()) return []
+  if (!isSupabaseInitialized()) return [];
 
-  logger.debug("Fetching difficult words via Edge Function", { bookId, userId, limit })
+  logger.debug("Fetching difficult words via Edge Function", {
+    bookId,
+    userId,
+    limit,
+  });
 
   try {
-    return await fetchEdge<WordWithProgress[]>("vocabulary-study", "/difficult", {
-      query: { bookId, limit }
-    })
+    return await fetchEdge<WordWithProgress[]>(
+      "vocabulary-study",
+      "/difficult",
+      {
+        query: { bookId, limit },
+      },
+    );
   } catch (error) {
-    logger.warn("Failed to get difficult words", { bookId, userId }, error as Error)
-    return []
+    logger.warn(
+      "Failed to get difficult words",
+      { bookId, userId },
+      error as Error,
+    );
+    return [];
   }
 }
 
@@ -148,26 +208,39 @@ export async function processWordReview(
   userId: string,
   wordId: string,
   bookId: string,
-  grade: SpacedRepetitionGrade
+  grade: SpacedRepetitionGrade,
 ): Promise<UserWordProgress | null> {
-  if (!isSupabaseInitialized()) return null
+  if (!isSupabaseInitialized()) return null;
 
-  logger.info("Processing word review via Edge Function", { userId, wordId, bookId, grade })
+  logger.info("Processing word review via Edge Function", {
+    userId,
+    wordId,
+    bookId,
+    grade,
+  });
 
   try {
-    const data = await fetchEdge<UserWordProgress>("vocabulary-study", "/review", {
-      method: "POST",
-      body: {
-        wordId,
-        bookId,
-        grade: GRADE_TO_RATING[grade]
-      }
-    })
-    logger.info("Word review processed", { userId, wordId, bookId })
-    return data
+    const data = await fetchEdge<UserWordProgress>(
+      "vocabulary-study",
+      "/review",
+      {
+        method: "POST",
+        body: {
+          wordId,
+          bookId,
+          grade: GRADE_TO_RATING[grade],
+        },
+      },
+    );
+    logger.info("Word review processed", { userId, wordId, bookId });
+    return data;
   } catch (error) {
-    logger.error("Failed to process review", { userId, wordId, bookId }, error as Error)
-    return null
+    logger.error(
+      "Failed to process review",
+      { userId, wordId, bookId },
+      error as Error,
+    );
+    return null;
   }
 }
 
@@ -177,22 +250,33 @@ export async function processWordReview(
  */
 export async function initializeBookProgress(
   userId: string,
-  bookId: string
+  bookId: string,
 ): Promise<UserBookProgress | null> {
-  if (!isSupabaseInitialized()) return null
+  if (!isSupabaseInitialized()) return null;
 
-  logger.info("Initializing book progress via Edge Function", { userId, bookId })
+  logger.info("Initializing book progress via Edge Function", {
+    userId,
+    bookId,
+  });
 
   try {
-    const data = await fetchEdge<UserBookProgress>("vocabulary-study", "/init", {
-      method: "POST",
-      body: { bookId }
-    })
-    logger.info("Book progress initialized", { userId, bookId })
-    return data
+    const data = await fetchEdge<UserBookProgress>(
+      "vocabulary-study",
+      "/init",
+      {
+        method: "POST",
+        body: { bookId },
+      },
+    );
+    logger.info("Book progress initialized", { userId, bookId });
+    return data;
   } catch (error) {
-    logger.error("Failed to initialize book progress", { userId, bookId }, error as Error)
-    return null
+    logger.error(
+      "Failed to initialize book progress",
+      { userId, bookId },
+      error as Error,
+    );
+    return null;
   }
 }
 
@@ -200,25 +284,58 @@ export async function initializeBookProgress(
  * Format next review time for display
  */
 export function formatNextReview(dueAt: string | null): string {
-  if (!dueAt) return "Not scheduled"
+  if (!dueAt) return "Not scheduled";
 
-  const due = new Date(dueAt)
-  const now = new Date()
-  const diffMs = due.getTime() - now.getTime()
+  const due = new Date(dueAt);
+  const now = new Date();
+  const diffMs = due.getTime() - now.getTime();
 
-  if (diffMs <= 0) return "Now"
+  if (diffMs <= 0) return "Now";
 
-  const diffMinutes = Math.round(diffMs / 60000)
-  if (diffMinutes < 60) return `${diffMinutes}m`
+  const diffMinutes = Math.round(diffMs / 60000);
+  if (diffMinutes < 60) return `${diffMinutes}m`;
 
-  const diffHours = Math.round(diffMinutes / 60)
-  if (diffHours < 24) return `${diffHours}h`
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h`;
 
-  const diffDays = Math.round(diffHours / 24)
-  if (diffDays === 1) return "Tomorrow"
-  if (diffDays < 7) return `${diffDays} days`
-  if (diffDays < 30) return `${Math.round(diffDays / 7)} weeks`
-  if (diffDays < 365) return `${Math.round(diffDays / 30)} months`
-  
-  return `${Math.round(diffDays / 365)} years`
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays === 1) return "Tomorrow";
+  if (diffDays < 7) return `${diffDays} days`;
+  if (diffDays < 30) return `${Math.round(diffDays / 7)} weeks`;
+  if (diffDays < 365) return `${Math.round(diffDays / 30)} months`;
+
+  return `${Math.round(diffDays / 365)} years`;
+}
+
+/**
+ * Get forgetting curve statistics for a book
+ * Calls Edge Function: vocabulary-study/stats/forgetting-curve
+ */
+export async function getForgettingCurveStats(
+  bookId: string,
+  userId: string,
+): Promise<ForgettingCurveStats | null> {
+  if (!isSupabaseInitialized()) return null;
+
+  logger.debug("Fetching forgetting curve stats via Edge Function", {
+    bookId,
+    userId,
+  });
+
+  try {
+    return await fetchEdge<ForgettingCurveStats>(
+      "vocabulary-study",
+      "/stats/forgetting-curve",
+      {
+        query: { bookId },
+      },
+    );
+  } catch (error) {
+    logger.warn(
+      "Failed to get forgetting curve stats",
+      { bookId, userId },
+      error as Error,
+    );
+    return null;
+  }
 }
