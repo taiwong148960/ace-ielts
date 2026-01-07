@@ -8,6 +8,80 @@ import {
 } from "../_shared/types.ts";
 import { createClient, SupabaseClient } from "../_shared/supabase.ts";
 
+// ============================================================================
+// Rate Limiter for LLM APIs
+// ============================================================================
+
+/**
+ * Rate limiter using sliding window algorithm
+ * Tracks request timestamps and enforces rate limits
+ */
+class RateLimiter {
+  private readonly maxRequestsPerMinute: number;
+  private readonly name: string;
+  private requestTimestamps: number[] = [];
+
+  constructor(maxRequestsPerMinute: number, name: string) {
+    this.maxRequestsPerMinute = maxRequestsPerMinute;
+    this.name = name;
+  }
+
+  /**
+   * Clean up old timestamps outside the sliding window
+   */
+  private cleanOldTimestamps(): void {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60 * 1000;
+    this.requestTimestamps = this.requestTimestamps.filter(
+      (ts) => ts > oneMinuteAgo
+    );
+  }
+
+  /**
+   * Check if a request can be made without exceeding rate limit
+   * Returns true if request is allowed, false if rate limit exceeded
+   */
+  checkAvailability(): boolean {
+    this.cleanOldTimestamps();
+    return this.requestTimestamps.length < this.maxRequestsPerMinute;
+  }
+
+  /**
+   * Record a request timestamp
+   */
+  recordRequest(): void {
+    this.requestTimestamps.push(Date.now());
+  }
+
+  /**
+   * Get current request count in the sliding window
+   */
+  getCurrentCount(): number {
+    this.cleanOldTimestamps();
+    return this.requestTimestamps.length;
+  }
+
+  /**
+   * Get limiter name for logging
+   */
+  getName(): string {
+    return this.name;
+  }
+
+  /**
+   * Get max requests per minute
+   */
+  getLimit(): number {
+    return this.maxRequestsPerMinute;
+  }
+}
+
+// Rate limiter instances for different model types
+// Text model: 1000 RPM
+const textModelRateLimiter = new RateLimiter(1000, "text-model");
+// TTS/Voice model: 10 RPM  
+const ttsModelRateLimiter = new RateLimiter(10, "tts-model");
+
 const logger = createLogger("vocabulary-words");
 
 interface WordDefinition {
@@ -562,6 +636,17 @@ async function generateAudio(
 ): Promise<Uint8Array> {
   const url = `${DEFAULT_BASE_URL}/models/${ttsModel}:generateContent`;
 
+  // Apply rate limiting for TTS model (10 RPM)
+  if (!ttsModelRateLimiter.checkAvailability()) {
+    logger.warn("Rate limit exceeded", {
+      limiter: ttsModelRateLimiter.getName(),
+      currentCount: ttsModelRateLimiter.getCurrentCount(),
+      limit: ttsModelRateLimiter.getLimit(),
+    });
+    throw new Error(`Rate limit exceeded for ${ttsModelRateLimiter.getName()}: ${ttsModelRateLimiter.getCurrentCount()}/${ttsModelRateLimiter.getLimit()} RPM`);
+  }
+  ttsModelRateLimiter.recordRequest();
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -680,27 +765,33 @@ async function enrichWord(
     exampleAudioPaths: { sentence: string; audio_path: string }[] | null;
   }
 > {
-  // API Key must be configured in Supabase environment variables
-  const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!geminiApiKey) {
-    throw new Error(
-      "GEMINI_API_KEY not configured in Supabase environment variables",
-    );
-  }
+  try {
+    // API Key must be configured in Supabase environment variables
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) {
+      throw new Error(
+        "GEMINI_API_KEY not configured in Supabase environment variables",
+      );
+    }
 
-  // Get user's model configuration, fallback to defaults if not found
-  const { data: userSettings } = await supabaseAdmin
-    .from("user_settings")
-    .select("gemini_model_config")
-    .eq("user_id", userId)
-    .single();
+    // Get user's model configuration, fallback to defaults if not found
+    const { data: userSettings, error: settingsError } = await supabaseAdmin
+      .from("user_settings")
+      .select("gemini_model_config")
+      .eq("user_id", userId)
+      .single();
 
-  const textModelConfig = userSettings?.gemini_model_config?.textModel ||
-    DEFAULT_GEMINI_TEXT_MODEL_CONFIG;
-  const ttsModelConfig = userSettings?.gemini_model_config?.ttsModel ||
-    DEFAULT_GEMINI_TTS_MODEL_CONFIG;
-  const model = textModelConfig.model;
-  const ttsModel = ttsModelConfig.model;
+    if (settingsError && settingsError.code !== "PGRST116") {
+      // PGRST116 = no rows returned, which is fine (use defaults)
+      logger.warn("Failed to fetch user settings", { userId, error: settingsError.message });
+    }
+
+    const textModelConfig = userSettings?.gemini_model_config?.textModel ||
+      DEFAULT_GEMINI_TEXT_MODEL_CONFIG;
+    const ttsModelConfig = userSettings?.gemini_model_config?.ttsModel ||
+      DEFAULT_GEMINI_TTS_MODEL_CONFIG;
+    const model = textModelConfig.model;
+    const ttsModel = ttsModelConfig.model;
 
   const prompt = `
       Role: Expert IELTS vocabulary tutor with access to authentic IELTS exam materials.
@@ -723,6 +814,18 @@ async function enrichWord(
   `;
 
   const url = `${DEFAULT_BASE_URL}/models/${model}:generateContent`;
+
+  // Apply rate limiting for text model (1000 RPM)
+  if (!textModelRateLimiter.checkAvailability()) {
+    logger.warn("Rate limit exceeded", {
+      limiter: textModelRateLimiter.getName(),
+      currentCount: textModelRateLimiter.getCurrentCount(),
+      limit: textModelRateLimiter.getLimit(),
+    });
+    throw new Error(`Rate limit exceeded for ${textModelRateLimiter.getName()}: ${textModelRateLimiter.getCurrentCount()}/${textModelRateLimiter.getLimit()} RPM`);
+  }
+  textModelRateLimiter.recordRequest();
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -847,5 +950,19 @@ async function enrichWord(
     logger.warn("Audio generation/upload failed", { wordId }, e as Error);
   }
 
-  return { wordData, wordAudioPath, exampleAudioPaths };
+    return { wordData, wordAudioPath, exampleAudioPaths };
+  } catch (error) {
+    // Log the error with context
+    logger.error("enrichWord failed", {
+      word,
+      wordId,
+      userId,
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+    }, error as Error);
+
+    // Rethrow with structured error information for the caller
+    throw new Error(
+      `Failed to enrich word "${word}": ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
 }

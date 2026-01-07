@@ -290,7 +290,7 @@ async function handleProcessReview(req: Request) {
     return errorResponse("Failed to update progress", 500);
   }
 
-  await supabaseAdmin.from("vocabulary_review_logs").insert({
+  const { error: logError } = await supabaseAdmin.from("vocabulary_review_logs").insert({
     user_id: user.id,
     word_id: wordId,
     book_id: bookId,
@@ -306,6 +306,15 @@ async function handleProcessReview(req: Request) {
     elapsed_days: progress.elapsed_days,
     reviewed_at: now.toISOString(),
   });
+
+  if (logError) {
+    logger.error("Failed to insert review log", {
+      userId: user.id,
+      wordId,
+      bookId,
+    }, new Error(logError.message));
+    // Don't return error - progress update succeeded, log is secondary
+  }
 
   await updateBookProgressStats(supabaseAdmin, user.id, bookId, isNew, now);
 

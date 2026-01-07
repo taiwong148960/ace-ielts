@@ -176,11 +176,12 @@ async function handleCreateBook(req: Request) {
       p_words: cleanedWords
     })
     if (wordsError) {
-      logger.warn("Failed to add words to book", { bookId: book.id }, new Error(wordsError.message))
+      logger.error("Failed to add words to book", { bookId: book.id }, new Error(wordsError.message))
+      return errorResponse("Book created but failed to add words: " + wordsError.message, 500)
     }
   }
 
-  await supabaseAdmin.from("vocabulary_user_book_progress").insert({
+  const { error: progressError } = await supabaseAdmin.from("vocabulary_user_book_progress").insert({
     user_id: user.id,
     book_id: book.id,
     mastered_count: 0,
@@ -189,6 +190,11 @@ async function handleCreateBook(req: Request) {
     streak_days: 0,
     accuracy_percent: 0
   })
+
+  if (progressError) {
+    logger.error("Failed to create book progress", { bookId: book.id }, new Error(progressError.message))
+    // Don't return error here - book is created, progress can be initialized later
+  }
 
   logger.info("Book created successfully", { bookId: book.id, wordCount: cleanedWords.length })
 
