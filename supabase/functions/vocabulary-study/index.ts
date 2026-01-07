@@ -3,7 +3,7 @@ import { initSupabase } from "../_shared/supabase.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { Router } from "../_shared/router.ts";
 import { createInitialWordProgress, processReview } from "../_shared/fsrs.ts";
-import { type FSRSRating, type FSRSState } from "../_shared/types.ts";
+import { type FSRSRating, type FSRSState, MASTERED_STABILITY_THRESHOLD } from "../_shared/types.ts";
 
 const logger = createLogger("vocabulary-study");
 
@@ -241,6 +241,12 @@ async function handleProcessReview(req: Request) {
     progress = newProgress;
   }
 
+  // Calculate elapsed_days dynamically from last_review_at
+  // This is critical for accurate FSRS retrievability calculation
+  const elapsedDays = progress.last_review_at
+    ? Math.max(0, Math.floor((now.getTime() - new Date(progress.last_review_at).getTime()) / (1000 * 60 * 60 * 24)))
+    : 0;
+
   const schedulingResult = processReview(
     {
       state: progress.state,
@@ -248,7 +254,7 @@ async function handleProcessReview(req: Request) {
       stability: progress.stability,
       learning_step: progress.learning_step,
       is_learning_phase: progress.is_learning_phase,
-      elapsed_days: progress.elapsed_days,
+      elapsed_days: elapsedDays,
       reps: progress.reps,
       lapses: progress.lapses,
     },
@@ -561,7 +567,7 @@ async function handleGetForgettingCurveStats(req: Request) {
     const state = p.state;
 
     // Mastery classification based on state and stability
-    if (state === "review" && stability > 21) {
+    if (state === "review" && stability > MASTERED_STABILITY_THRESHOLD) {
       masteryDistribution.mastered++;
       masteredStabilitySum += stability;
       masteredCount++;

@@ -119,7 +119,6 @@ CREATE TABLE IF NOT EXISTS "public"."vocabulary_user_word_progress" (
     "user_id" UUID NOT NULL REFERENCES "auth"."users"("id") ON DELETE CASCADE,
     "word_id" UUID NOT NULL REFERENCES "public"."vocabulary_words"("id") ON DELETE CASCADE,
     "book_id" UUID NOT NULL REFERENCES "public"."vocabulary_books"("id") ON DELETE CASCADE,
-    "mastery_level" VARCHAR(20) DEFAULT 'new' CHECK (mastery_level IN ('new', 'learning', 'reviewing', 'mastered')),
     "review_count" INTEGER DEFAULT 0,
     "correct_count" INTEGER DEFAULT 0,
     "last_review_at" TIMESTAMPTZ,

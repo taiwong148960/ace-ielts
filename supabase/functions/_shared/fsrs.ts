@@ -144,14 +144,15 @@ function reviewLearningPhase(
 
     if (rating === 4) {
       const interval = Math.max(1, nextInterval(newStability))
+      const fuzzedInterval = fuzzInterval(interval)
       return {
         state: "review",
         difficulty: newDifficulty,
         stability: newStability,
         retrievability: 1,
         elapsed_days: 0,
-        scheduled_days: fuzzInterval(interval),
-        due_at: addDays(now, fuzzInterval(interval)),
+        scheduled_days: fuzzedInterval,
+        due_at: addDays(now, fuzzedInterval),
         learning_step: 0,
         is_learning_phase: false
       }
@@ -162,14 +163,15 @@ function reviewLearningPhase(
 
     if (shouldGraduate) {
       const interval = Math.max(1, nextInterval(newStability))
+      const fuzzedInterval = fuzzInterval(interval)
       return {
         state: "review",
         difficulty: newDifficulty,
         stability: newStability,
         retrievability: 1,
         elapsed_days: 0,
-        scheduled_days: fuzzInterval(interval),
-        due_at: addDays(now, fuzzInterval(interval)),
+        scheduled_days: fuzzedInterval,
+        due_at: addDays(now, fuzzedInterval),
         learning_step: 0,
         is_learning_phase: false
       }
@@ -208,14 +210,15 @@ function reviewLearningPhase(
   if (rating === 4) {
     const newStability = Math.max(currentStability * 1.5, 1)
     const interval = Math.max(1, nextInterval(newStability))
+    const fuzzedInterval = fuzzInterval(interval)
     return {
       state: "review",
       difficulty: nextDifficulty(currentDifficulty, rating),
       stability: newStability,
       retrievability: 1,
       elapsed_days: 0,
-      scheduled_days: fuzzInterval(interval),
-      due_at: addDays(now, fuzzInterval(interval)),
+      scheduled_days: fuzzedInterval,
+      due_at: addDays(now, fuzzedInterval),
       learning_step: 0,
       is_learning_phase: false
     }
@@ -227,14 +230,15 @@ function reviewLearningPhase(
 
   if (shouldGraduate) {
     const interval = Math.max(1, nextInterval(currentStability))
+    const fuzzedInterval = fuzzInterval(interval)
     return {
       state: "review",
       difficulty: nextDifficulty(currentDifficulty, rating),
       stability: currentStability,
       retrievability: 1,
       elapsed_days: 0,
-      scheduled_days: fuzzInterval(interval),
-      due_at: addDays(now, fuzzInterval(interval)),
+      scheduled_days: fuzzedInterval,
+      due_at: addDays(now, fuzzedInterval),
       learning_step: 0,
       is_learning_phase: false
     }

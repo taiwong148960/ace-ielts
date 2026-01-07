@@ -393,20 +393,38 @@ async function handleUpdateSettings(req: Request, params: Record<string, string>
 
   logger.info("Checking import progress", { userId: user.id, bookId })
 
+  // First get the book to check access and get import_status
   const { data: book } = await supabaseAdmin
     .from("vocabulary_books")
-    .select("import_status, import_progress, import_total, import_started_at, import_completed_at, user_id, is_system_book")
+    .select("import_status, user_id, is_system_book, word_count")
     .eq("id", bookId)
     .single()
 
   if (!book) return errorResponse("Book not found", 404)
   if (!book.is_system_book && book.user_id !== user.id) return errorResponse("Forbidden", 403)
 
+  // Calculate actual progress by counting word statuses
+  const { count: doneCount } = await supabaseAdmin
+    .from("vocabulary_book_words")
+    .select("word_id, vocabulary_words!inner(import_status)", { count: "exact", head: true })
+    .eq("book_id", bookId)
+    .eq("vocabulary_words.import_status", "done")
+
+  const { count: failedCount } = await supabaseAdmin
+    .from("vocabulary_book_words")
+    .select("word_id, vocabulary_words!inner(import_status)", { count: "exact", head: true })
+    .eq("book_id", bookId)
+    .eq("vocabulary_words.import_status", "failed")
+
+  const total = book.word_count || 0
+  const current = (doneCount || 0) + (failedCount || 0)
+
   return successResponse({
     status: book.import_status,
-    current: book.import_progress || 0,
-    total: book.import_total || 0,
-    startedAt: book.import_started_at,
-    completedAt: book.import_completed_at
+    current,
+    total,
+    done: doneCount || 0,
+    failed: failedCount || 0
   })
 }
+

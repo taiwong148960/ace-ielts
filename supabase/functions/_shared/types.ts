@@ -74,7 +74,7 @@ export const LEARNING_STEPS: Record<number, number> = {
   1: 1, // Again: 1 minute
   2: 5, // Hard: 5 minutes
   3: 10, // Good: 10 minutes
-  4: 60, // Easy: 1 hour (changed from 0 to match frontend)
+  4: 60, // Easy: not actually used - Easy rating graduates directly to review phase
 };
 
 /**
@@ -82,6 +82,13 @@ export const LEARNING_STEPS: Record<number, number> = {
  * @sync packages/core/src/types/vocabulary.ts - LEARNING_GRADUATION_STEPS
  */
 export const LEARNING_GRADUATION_STEPS = 2;
+
+/**
+ * Stability threshold (in days) to consider a word "mastered"
+ * Words in "review" state with stability > this value are considered mastered
+ * @sync packages/core/src/types/vocabulary.ts - MASTERED_STABILITY_THRESHOLD
+ */
+export const MASTERED_STABILITY_THRESHOLD = 21;
 
 /**
  * Default Gemini text model configuration

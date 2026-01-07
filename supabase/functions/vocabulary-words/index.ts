@@ -391,7 +391,7 @@ async function handleProcessPendingWords(_req: Request) {
           .from("vocabulary_words")
           .update({
             import_status: "failed",
-            import_error: "No book or user found for word",
+            error_msg: "No book or user found for word",
             locked_by: null,
           })
           .eq("id", wordRecord.id);
@@ -484,7 +484,7 @@ async function handleProcessPendingWords(_req: Request) {
           .from("vocabulary_words")
           .update({
             import_status: "failed",
-            import_error: error instanceof Error
+            error_msg: error instanceof Error
               ? error.message
               : "Unknown error",
             locked_by: null,
@@ -841,38 +841,37 @@ async function enrichWord(
       supabaseAdmin,
     );
 
-    // Generate example sentence audios
+    // Generate example sentence audios (serially to avoid rate limits)
     if (wordData.examples && wordData.examples.length > 0) {
-      exampleAudioPaths = await Promise.all(
-        wordData.examples.map(async (ex: ExampleSentence, index: number) => {
-          try {
-            const randomVoice =
-              GEMINI_VOICES[Math.floor(Math.random() * GEMINI_VOICES.length)];
-            // Randomly choose American or British accent for IELTS listening exam simulation
-            const accent = Math.random() < 0.5 ? "American" : "British";
-            const exampleAudioData = await generateAudio(
-              `Say in a professional ${accent} accent, loud and clear like IELTS listening: "${ex.sentence}"`,
-              geminiApiKey,
-              ttsModel,
-              randomVoice,
-            );
-            const exampleStoragePath =
-              `${userId}/${wordId}/example-${index}.wav`;
-            const audioPath = await uploadAudioToStorage(
-              exampleAudioData,
-              exampleStoragePath,
-              supabaseAdmin,
-            );
-            return { sentence: ex.sentence, audio_path: audioPath };
-          } catch (error) {
-            logger.warn("Failed to generate/upload example audio", {
-              index,
-              sentence: ex.sentence,
-            }, error as Error);
-            return { sentence: ex.sentence, audio_path: "" };
-          }
-        }),
-      );
+      exampleAudioPaths = [];
+      for (const [index, ex] of wordData.examples.entries()) {
+        try {
+          const randomVoice =
+            GEMINI_VOICES[Math.floor(Math.random() * GEMINI_VOICES.length)];
+          // Randomly choose American or British accent for IELTS listening exam simulation
+          const accent = Math.random() < 0.5 ? "American" : "British";
+          const exampleAudioData = await generateAudio(
+            `Say in a professional ${accent} accent, loud and clear like IELTS listening: "${ex.sentence}"`,
+            geminiApiKey,
+            ttsModel,
+            randomVoice,
+          );
+          const exampleStoragePath =
+            `${userId}/${wordId}/example-${index}.wav`;
+          const audioPath = await uploadAudioToStorage(
+            exampleAudioData,
+            exampleStoragePath,
+            supabaseAdmin,
+          );
+          exampleAudioPaths.push({ sentence: ex.sentence, audio_path: audioPath });
+        } catch (error) {
+          logger.warn("Failed to generate/upload example audio", {
+            index,
+            sentence: ex.sentence,
+          }, error as Error);
+          exampleAudioPaths.push({ sentence: ex.sentence, audio_path: "" });
+        }
+      }
     }
   } catch (e) {
     logger.warn("Audio generation/upload failed", { wordId }, e as Error);
