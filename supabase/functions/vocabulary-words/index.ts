@@ -8,80 +8,6 @@ import {
 } from "../_shared/types.ts";
 import { createClient, SupabaseClient } from "../_shared/supabase.ts";
 
-// ============================================================================
-// Rate Limiter for LLM APIs
-// ============================================================================
-
-/**
- * Rate limiter using sliding window algorithm
- * Tracks request timestamps and enforces rate limits
- */
-class RateLimiter {
-  private readonly maxRequestsPerMinute: number;
-  private readonly name: string;
-  private requestTimestamps: number[] = [];
-
-  constructor(maxRequestsPerMinute: number, name: string) {
-    this.maxRequestsPerMinute = maxRequestsPerMinute;
-    this.name = name;
-  }
-
-  /**
-   * Clean up old timestamps outside the sliding window
-   */
-  private cleanOldTimestamps(): void {
-    const now = Date.now();
-    const oneMinuteAgo = now - 60 * 1000;
-    this.requestTimestamps = this.requestTimestamps.filter(
-      (ts) => ts > oneMinuteAgo
-    );
-  }
-
-  /**
-   * Check if a request can be made without exceeding rate limit
-   * Returns true if request is allowed, false if rate limit exceeded
-   */
-  checkAvailability(): boolean {
-    this.cleanOldTimestamps();
-    return this.requestTimestamps.length < this.maxRequestsPerMinute;
-  }
-
-  /**
-   * Record a request timestamp
-   */
-  recordRequest(): void {
-    this.requestTimestamps.push(Date.now());
-  }
-
-  /**
-   * Get current request count in the sliding window
-   */
-  getCurrentCount(): number {
-    this.cleanOldTimestamps();
-    return this.requestTimestamps.length;
-  }
-
-  /**
-   * Get limiter name for logging
-   */
-  getName(): string {
-    return this.name;
-  }
-
-  /**
-   * Get max requests per minute
-   */
-  getLimit(): number {
-    return this.maxRequestsPerMinute;
-  }
-}
-
-// Rate limiter instances for different model types
-// Text model: 1000 RPM
-const textModelRateLimiter = new RateLimiter(1000, "text-model");
-// TTS/Voice model: 10 RPM  
-const ttsModelRateLimiter = new RateLimiter(10, "tts-model");
-
 const logger = createLogger("vocabulary-words");
 
 interface WordDefinition {
@@ -382,7 +308,7 @@ async function handleDeleteWord(req: Request, params: Record<string, string>) {
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_VOICE = "Zephyr";
 const GEMINI_VOICES = ["Puck", "Charon", "Kore", "Fenrir", "Aoede", "Zephyr"];
-const BATCH_SIZE = 5;
+const MAX_EXECUTION_TIME_MS = 60000;
 
 async function handleProcessPendingWords(_req: Request) {
   // Service Role Auth (Cron)
@@ -399,38 +325,55 @@ async function handleProcessPendingWords(_req: Request) {
     Math.random().toString(36).substring(2, 9)
   }`;
 
-  // Atomically claim pending words using database function
-  const { data: words, error: wordsError } = await supabaseAdmin.rpc(
-    "claim_pending_vocabulary_words",
-    {
-      batch_size: BATCH_SIZE,
-      instance_id: instanceId,
-    },
-  );
-
-  if (wordsError) {
-    logger.error("Failed to claim pending words", {}, wordsError as Error);
-    return errorResponse(wordsError.message, 500);
-  }
-
-  if (!words || words.length === 0) {
-    return successResponse({
-      processed: 0,
-      failed: 0,
-      total: 0,
-      instanceId,
-    });
-  }
-
-  logger.info("Claimed words for processing", {
-    instanceId,
-    count: words.length,
-  });
-
+  const startTime = Date.now();
   let processedCount = 0;
   let failedCount = 0;
+  let totalClaimed = 0;
 
-  for (const wordRecord of words) {
+  logger.info("Starting continuous word processing", { instanceId });
+
+  // Continuous loop until timeout or no more pending words
+  while (true) {
+    // Check timeout before claiming next word
+    const elapsedMs = Date.now() - startTime;
+    if (elapsedMs > MAX_EXECUTION_TIME_MS) {
+      logger.info("Timeout reached, stopping processing", {
+        instanceId,
+        elapsedMs,
+        processed: processedCount,
+        failed: failedCount,
+      });
+      break;
+    }
+
+    // Atomically claim 1 pending word using database function
+    // FOR UPDATE SKIP LOCKED ensures concurrent handlers won't get the same word
+    const { data: words, error: wordsError } = await supabaseAdmin.rpc(
+      "claim_pending_vocabulary_words",
+      {
+        batch_size: 1,
+        instance_id: instanceId,
+      },
+    );
+
+    if (wordsError) {
+      logger.error("Failed to claim pending words", {}, wordsError as Error);
+      break;
+    }
+
+    // No more pending words
+    if (!words || words.length === 0) {
+      logger.info("No more pending words, stopping", {
+        instanceId,
+        processed: processedCount,
+        failed: failedCount,
+      });
+      break;
+    }
+
+    const wordRecord = words[0];
+    totalClaimed++;
+
     try {
       const { data: bookWord } = await supabaseAdmin
         .from("vocabulary_book_words")
@@ -524,6 +467,12 @@ async function handleProcessPendingWords(_req: Request) {
       }
 
       processedCount++;
+      logger.info("Word processed successfully", {
+        wordId: wordRecord.id,
+        word: wordRecord.word,
+        instanceId,
+        elapsedMs: Date.now() - startTime,
+      });
     } catch (error) {
       logger.error("Failed to process word", {
         wordId: wordRecord.id,
@@ -552,18 +501,21 @@ async function handleProcessPendingWords(_req: Request) {
     }
   }
 
-  logger.info("Batch processing completed", {
+  const totalElapsedMs = Date.now() - startTime;
+  logger.info("Processing session completed", {
     instanceId,
     processed: processedCount,
     failed: failedCount,
-    total: words.length,
+    totalClaimed,
+    totalElapsedMs,
   });
 
   return successResponse({
     processed: processedCount,
     failed: failedCount,
-    total: words.length,
+    total: totalClaimed,
     instanceId,
+    elapsedMs: totalElapsedMs,
   });
 }
 
@@ -635,18 +587,6 @@ async function generateAudio(
   voice: string = DEFAULT_VOICE,
 ): Promise<Uint8Array> {
   const url = `${DEFAULT_BASE_URL}/models/${ttsModel}:generateContent`;
-
-  // Apply rate limiting for TTS model (10 RPM)
-  if (!ttsModelRateLimiter.checkAvailability()) {
-    logger.warn("Rate limit exceeded", {
-      limiter: ttsModelRateLimiter.getName(),
-      currentCount: ttsModelRateLimiter.getCurrentCount(),
-      limit: ttsModelRateLimiter.getLimit(),
-    });
-    throw new Error(`Rate limit exceeded for ${ttsModelRateLimiter.getName()}: ${ttsModelRateLimiter.getCurrentCount()}/${ttsModelRateLimiter.getLimit()} RPM`);
-  }
-  ttsModelRateLimiter.recordRequest();
-
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -814,18 +754,6 @@ async function enrichWord(
   `;
 
   const url = `${DEFAULT_BASE_URL}/models/${model}:generateContent`;
-
-  // Apply rate limiting for text model (1000 RPM)
-  if (!textModelRateLimiter.checkAvailability()) {
-    logger.warn("Rate limit exceeded", {
-      limiter: textModelRateLimiter.getName(),
-      currentCount: textModelRateLimiter.getCurrentCount(),
-      limit: textModelRateLimiter.getLimit(),
-    });
-    throw new Error(`Rate limit exceeded for ${textModelRateLimiter.getName()}: ${textModelRateLimiter.getCurrentCount()}/${textModelRateLimiter.getLimit()} RPM`);
-  }
-  textModelRateLimiter.recordRequest();
-
   const response = await fetch(url, {
     method: "POST",
     headers: {

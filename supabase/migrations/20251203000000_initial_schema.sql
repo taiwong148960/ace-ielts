@@ -643,69 +643,7 @@ AS $$
     RETURNING *;
 $$;
 
--- 9.2 Edge Function Trigger
-CREATE OR REPLACE FUNCTION "public"."trigger_vocabulary_process"()
-RETURNS TRIGGER 
-LANGUAGE plpgsql 
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    pending_exists BOOLEAN;
-    v_secret TEXT;
-    v_origin TEXT;
-BEGIN
-    SELECT EXISTS(
-        SELECT 1 FROM "public"."vocabulary_words" 
-        WHERE import_status = 'pending' 
-        LIMIT 1
-    ) INTO pending_exists;
-
-    IF NOT pending_exists THEN
-        RETURN NULL;
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_net') THEN
-        RAISE EXCEPTION 'pg_net not available, skipping trigger';
-        RETURN NULL;
-    END IF;
-
-    -- Retrieve secret from Vault
-    SELECT decrypted_secret INTO v_secret FROM vault.decrypted_secrets WHERE name = 'supabase_secret';
-
-    -- Retrieve origin from App Settings
-    SELECT value #>> '{}' INTO v_origin FROM app_settings WHERE key = 'supabase_origin';
-
-    IF v_origin IS NULL THEN
-        v_origin := 'http://host.docker.internal:54321';
-    END IF;
-
-    -- Fallback if secret is missing (log warning and exit)
-    IF v_secret IS NULL THEN
-        RAISE EXCEPTION 'supabase_secret not found in vault';
-        RETURN NULL;
-    END IF;
-
-    PERFORM net.http_post(
-        url := v_origin || '/functions/v1/vocabulary-words/process',
-        headers := jsonb_build_object(
-            'Content-Type', 'application/json',
-            'Authorization', 'Bearer ' || v_secret
-        ),
-        body := jsonb_build_object('source', 'trigger')
-    );
-
-    RETURN NULL;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS "on_vocabulary_words_pending_insert" ON "public"."vocabulary_words";
-CREATE TRIGGER "on_vocabulary_words_pending_insert"
-    AFTER INSERT ON "public"."vocabulary_words"
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION "public"."trigger_vocabulary_process"();
-
--- 9.3 Cron Failsafe Function
+-- 9.2 Cron Failsafe Function
 CREATE OR REPLACE FUNCTION "public"."process_pending_vocabulary_words"()
 RETURNS void 
 LANGUAGE plpgsql 
@@ -759,7 +697,7 @@ BEGIN
 END;
 $$;
 
--- 9.4 Stuck Task Recovery Function
+-- 9.3 Stuck Task Recovery Function
 CREATE OR REPLACE FUNCTION "public"."recover_stuck_vocabulary_words"()
 RETURNS void 
 LANGUAGE plpgsql 
@@ -786,7 +724,7 @@ BEGIN
 END;
 $$;
 
--- 9.5 Check Book Completion Failsafe
+-- 9.4 Check Book Completion Failsafe
 CREATE OR REPLACE FUNCTION "public"."check_and_complete_books"()
 RETURNS void
 LANGUAGE plpgsql
