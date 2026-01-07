@@ -1,6 +1,6 @@
 ---
+trigger: glob
 globs: supabase/functions/**
-alwaysApply: false
 ---
 ## 1. HTTP Method Semantics
 

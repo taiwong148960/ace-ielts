@@ -51,13 +51,14 @@ CREATE TABLE IF NOT EXISTS "public"."vocabulary_words" (
     "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "word" VARCHAR(200) NOT NULL UNIQUE,
     "phonetic" VARCHAR(200),
-    "definition" TEXT,
-    "example_sentence" TEXT,
-    "word_details" JSONB,
+    "audio_path" TEXT,
+    "meta" JSONB DEFAULT '{}',
+    "forms" JSONB DEFAULT '{}',
+    "definitions" JSONB DEFAULT '[]',
+    "examples" JSONB DEFAULT '[]',
+    "confused_words" JSONB DEFAULT '[]',
     "import_status" public.import_status_enum DEFAULT 'pending',
-    "import_error" TEXT,
-    "word_audio_url" TEXT,
-    "example_audio_urls" JSONB,
+    "error_msg" TEXT,
     "locked_by" TEXT,
     "created_at" TIMESTAMPTZ DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ DEFAULT NOW()
@@ -203,9 +204,11 @@ CREATE TABLE IF NOT EXISTS "public"."vocabulary_review_logs" (
 
 -- Vocabulary Words (Global)
 CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_word" ON "public"."vocabulary_words" ("word");
-CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_word_details" ON "public"."vocabulary_words" USING GIN ("word_details");
 CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_pending_by_created" ON "public"."vocabulary_words" ("created_at") WHERE import_status = 'pending';
 CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_importing_by_updated" ON "public"."vocabulary_words" ("updated_at") WHERE import_status = 'importing';
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_meta" ON "public"."vocabulary_words" USING GIN ("meta");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_forms" ON "public"."vocabulary_words" USING GIN ("forms");
+CREATE INDEX IF NOT EXISTS "idx_vocabulary_words_definitions" ON "public"."vocabulary_words" USING GIN ("definitions");
 
 -- Vocabulary Books
 CREATE INDEX IF NOT EXISTS "idx_vocabulary_books_user_id" ON "public"."vocabulary_books" ("user_id");
@@ -541,10 +544,12 @@ RETURNS TABLE (
     word_id UUID,
     word VARCHAR(200),
     phonetic VARCHAR(200),
-    definition TEXT,
-    example_sentence TEXT,
-    word_details JSONB,
-    word_audio_url TEXT,
+    audio_path TEXT,
+    meta JSONB,
+    forms JSONB,
+    definitions JSONB,
+    examples JSONB,
+    confused_words JSONB,
     import_status public.import_status_enum,
     sort_order INTEGER,
     notes TEXT
@@ -560,10 +565,12 @@ BEGIN
         vw.id AS word_id,
         vw.word,
         vw.phonetic,
-        vw.definition,
-        vw.example_sentence,
-        vw.word_details,
-        vw.word_audio_url,
+        vw.audio_path,
+        vw.meta,
+        vw.forms,
+        vw.definitions,
+        vw.examples,
+        vw.confused_words,
         vw.import_status,
         bw.sort_order,
         bw.notes
@@ -573,6 +580,37 @@ BEGIN
     ORDER BY bw.sort_order
     LIMIT p_limit
     OFFSET p_offset;
+END;
+$$;
+
+-- 8.7 Update Word Details (Transactional)
+CREATE OR REPLACE FUNCTION "public"."update_word_details"(
+    p_word_id UUID,
+    p_phonetic VARCHAR(200),
+    p_audio_path TEXT,
+    p_meta JSONB,
+    p_forms JSONB,
+    p_definitions JSONB,
+    p_examples JSONB,
+    p_confused_words JSONB
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    UPDATE vocabulary_words SET
+        phonetic = p_phonetic,
+        audio_path = p_audio_path,
+        meta = p_meta,
+        forms = p_forms,
+        definitions = p_definitions,
+        examples = p_examples,
+        confused_words = p_confused_words,
+        import_status = 'done',
+        updated_at = NOW()
+    WHERE id = p_word_id;
 END;
 $$;
 
@@ -737,13 +775,49 @@ BEGIN
             import_status = 'pending',
             locked_by = NULL
         WHERE import_status = 'importing'
-            AND updated_at < NOW() - INTERVAL '3 minutes'
+        AND updated_at < NOW() - INTERVAL '3 minutes'
         RETURNING id
     )
     SELECT COUNT(*) INTO recovered_count FROM recovered;
 
     IF recovered_count > 0 THEN
         RAISE NOTICE 'Recovered % stuck tasks', recovered_count;
+    END IF;
+END;
+$$;
+
+-- 9.5 Check Book Completion Failsafe
+CREATE OR REPLACE FUNCTION "public"."check_and_complete_books"()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    updated_count INT;
+BEGIN
+    WITH updated AS (
+        UPDATE vocabulary_books vb
+        SET 
+            import_status = 'done',
+            updated_at = NOW()
+        WHERE vb.import_status != 'done'
+        AND EXISTS (
+            SELECT 1 FROM vocabulary_book_words vbw WHERE vbw.book_id = vb.id
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM vocabulary_book_words vbw
+            JOIN vocabulary_words vw ON vbw.word_id = vw.id
+            WHERE vbw.book_id = vb.id
+            AND vw.import_status != 'done'
+        )
+        RETURNING id
+    )
+    SELECT COUNT(*) INTO updated_count FROM updated;
+
+    IF updated_count > 0 THEN
+        RAISE NOTICE 'Completed % books via failsafe', updated_count;
     END IF;
 END;
 $$;
@@ -757,6 +831,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
         BEGIN PERFORM cron.unschedule('process-pending-vocabulary-words'); EXCEPTION WHEN OTHERS THEN NULL; END;
         BEGIN PERFORM cron.unschedule('recover-stuck-vocabulary-words'); EXCEPTION WHEN OTHERS THEN NULL; END;
+        BEGIN PERFORM cron.unschedule('check-and-complete-books'); EXCEPTION WHEN OTHERS THEN NULL; END;
 
         PERFORM cron.schedule(
             'process-pending-vocabulary-words',
@@ -768,6 +843,12 @@ BEGIN
             'recover-stuck-vocabulary-words',
             '*/1 * * * *',
             'SELECT public.recover_stuck_vocabulary_words()'
+        );
+
+        PERFORM cron.schedule(
+            'check-and-complete-books',
+            '*/5 * * * *',
+            'SELECT public.check_and_complete_books()'
         );
 
         RAISE NOTICE 'Cron jobs scheduled successfully';
@@ -799,3 +880,4 @@ GRANT EXECUTE ON FUNCTION "public"."get_due_cards_with_fuzz" TO "authenticated",
 GRANT EXECUTE ON FUNCTION "public"."claim_pending_vocabulary_words" TO "service_role";
 GRANT EXECUTE ON FUNCTION "public"."process_pending_vocabulary_words" TO "service_role";
 GRANT EXECUTE ON FUNCTION "public"."recover_stuck_vocabulary_words" TO "service_role";
+GRANT EXECUTE ON FUNCTION "public"."check_and_complete_books" TO "service_role";

@@ -41,7 +41,6 @@ export type {
   LearningMode,
   ImportStatus,
   ImportProgress,
-  WordDetailData,
   GeminiTextModel,
   GeminiTTSModel,
   GeminiTextModelConfig,

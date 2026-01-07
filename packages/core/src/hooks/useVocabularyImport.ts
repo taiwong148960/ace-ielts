@@ -28,7 +28,7 @@ export function useVocabularyImport(bookId: string | null) {
     progress,
     isLoadingProgress,
     isImporting: progress?.status === "importing",
-    isCompleted: progress?.status === "completed",
+    isCompleted: progress?.status === "done",
     refetchProgress
   }
 }

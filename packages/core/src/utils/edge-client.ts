@@ -23,12 +23,7 @@ export async function fetchEdge<T>(
   
   const queryParams = new URLSearchParams()
   
-  // Use _path to simulate path routing
-  if (path !== "/") {
-    queryParams.set("_path", path)
-  }
-  
-  // Add other query params
+  // Add query params
   if (options.query) {
     Object.entries(options.query).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
@@ -38,7 +33,18 @@ export async function fetchEdge<T>(
   }
   
   const queryString = queryParams.toString()
-  const functionName = queryString ? `${resource}?${queryString}` : resource
+
+  // Construct function endpoint with path
+  let endpoint = resource
+  if (path && path !== "/") {
+    // Remove trailing slash from resource if present
+    endpoint = endpoint.replace(/\/$/, "")
+    // Ensure path starts with /
+    const cleanPath = path.startsWith("/") ? path : `/${path}`
+    endpoint = `${endpoint}${cleanPath}`
+  }
+  
+  const functionName = queryString ? `${endpoint}?${queryString}` : endpoint
   const method = options.method || "GET"
   
   logger.debug(`Invoking Edge Function: ${resource}`, { path, method, query: options.query })

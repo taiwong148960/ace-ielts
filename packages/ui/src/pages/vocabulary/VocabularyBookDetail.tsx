@@ -376,13 +376,21 @@ export function VocabularyBookDetail() {
   const importStatus = book?.import_status as ImportStatus | null
   const needsPolling = importStatus === "importing"
   
-  const { progress: realTimeProgress } = useVocabularyImport(
+  const { progress: realTimeProgress, isCompleted } = useVocabularyImport(
     needsPolling ? bookId : null
   )
 
   const currentImportStatus = realTimeProgress?.status ?? importStatus
   const importProgress = realTimeProgress?.current ?? book?.import_progress ?? 0
   const importTotal = realTimeProgress?.total ?? book?.import_total ?? 0
+
+  // Refetch book details when import completes to update word counts
+  useEffect(() => {
+    if (isCompleted) {
+      refetch()
+    }
+  }, [isCompleted, refetch])
+
   useEffect(() => {
     if (book && user && !isLoading) {
       initializeProgress()
@@ -541,16 +549,7 @@ export function VocabularyBookDetail() {
                   )}
                 </div>
               )}
-              
-              {currentImportStatus === "completed" && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-md border border-emerald-200">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  <span className="text-sm font-medium text-emerald-700">
-                    {t("vocabulary.bookDetail.importStatus.completed")}
-                  </span>
-                </div>
-              )}
-              
+
               {user && (
                 <Button
                   variant="ghost"
@@ -725,7 +724,7 @@ export function VocabularyBookDetail() {
                       <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                       <span className="text-sm text-text-secondary">
                         {t("vocabulary.bookDetail.wordsToReview", {
-                          count: todaySession?.reviewWords.length || displayStats.todayReview
+                          count: todaySession ? todaySession.reviewWords.length : 0
                         })}
                       </span>
                     </div>
@@ -735,7 +734,7 @@ export function VocabularyBookDetail() {
                       <Sparkles className="h-4 w-4 text-amber-600" />
                       <span className="text-sm text-text-secondary">
                         {t("vocabulary.bookDetail.newWordsToday", {
-                          count: todaySession?.newWords.length || displayStats.todayNew
+                          count: todaySession ? todaySession.newWords.length : 0
                         })}
                       </span>
                     </div>

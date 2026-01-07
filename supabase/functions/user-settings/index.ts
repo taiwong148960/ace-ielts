@@ -98,10 +98,13 @@ async function handleUpdateSettings(req: Request) {
       })
       .eq("id", existing.id)
       .select().single()
-    if (error) return errorResponse("Failed to update user settings", 500)
+    if (error) {
+      logger.error("Failed to update user settings", { userId: user.id }, new Error(error.message))
+      return errorResponse("Failed to update user settings", 500)
+    }
     settings = data
   } else {
-    // User has never set settings - create with full configuration
+    // User has settings - create with full configuration
     const { data, error } = await supabaseAdmin
       .from("user_settings")
       .insert({
@@ -110,7 +113,10 @@ async function handleUpdateSettings(req: Request) {
         gemini_model_config: input.gemini_model_config
       })
       .select().single()
-    if (error) return errorResponse("Failed to create user settings", 500)
+    if (error) {
+      logger.error("Failed to create user settings", { userId: user.id }, new Error(error.message))
+      return errorResponse("Failed to create user settings", 500)
+    }
     settings = data
   }
 

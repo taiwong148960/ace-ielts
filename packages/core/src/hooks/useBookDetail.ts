@@ -116,7 +116,22 @@ export function useBookDetail(bookId: string | null, userId: string | null): Use
           queryKeys.bookDetail.byId(bookId, userId),
           (old: { book: VocabularyBook; progress: UserBookProgress | null; stats: BookDetailStats } | undefined) => {
             if (!old) return old
-            return { ...old, progress: newProgress }
+            
+            // Recalculate stats based on new progress
+            const newStats: BookDetailStats = {
+              totalWords: old.book.word_count || 0,
+              mastered: newProgress.mastered_count || 0,
+              learning: newProgress.learning_count || 0,
+              newWords: newProgress.new_count || 0,
+              todayReview: newProgress.reviews_today || 0,
+              todayNew: newProgress.new_words_today || 0,
+              estimatedMinutes: 0,
+              streak: newProgress.streak_days || 0,
+              accuracy: newProgress.accuracy_percent || 0,
+              averageStability: 0
+            }
+
+            return { ...old, progress: newProgress, stats: newStats }
           }
         )
       }

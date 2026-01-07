@@ -252,7 +252,10 @@ async function handleUpdateBook(req: Request, params: Record<string, string>) {
     .select()
     .single()
 
-  if (error) return errorResponse("Failed to update book", 500)
+  if (error) {
+    logger.error("Failed to update book", { userId: user.id, bookId }, new Error(error.message))
+    return errorResponse("Failed to update book", 500)
+  }
   
   logger.info("Book updated successfully", { bookId })
   return successResponse(book)
@@ -350,7 +353,10 @@ async function handleUpdateSettings(req: Request, params: Record<string, string>
       })
       .eq("id", existing.id)
       .select().single()
-    if (error) return errorResponse("Failed to update settings", 500)
+    if (error) {
+      logger.error("Failed to update book settings", { userId: user.id, bookId }, new Error(error.message))
+      return errorResponse("Failed to update settings", 500)
+    }
     result = data
   } else {
     // User has never set settings - create with full configuration
@@ -365,7 +371,10 @@ async function handleUpdateSettings(req: Request, params: Record<string, string>
         study_order: input.study_order
       })
       .select().single()
-    if (error) return errorResponse("Failed to create settings", 500)
+    if (error) {
+      logger.error("Failed to create book settings", { userId: user.id, bookId }, new Error(error.message))
+      return errorResponse("Failed to create settings", 500)
+    }
     result = data
   }
 

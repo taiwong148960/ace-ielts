@@ -1,5 +1,5 @@
 ---
-alwaysApply: true
+trigger: always_on
 ---
 
 # UI & Design System

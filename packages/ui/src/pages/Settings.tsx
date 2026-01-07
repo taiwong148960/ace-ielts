@@ -204,8 +204,8 @@ export function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gemini-3-flash">Gemini 3 Flash</SelectItem>
-                      <SelectItem value="gemini-3-pro">Gemini 3 Pro</SelectItem>
+                      <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash</SelectItem>
+                      <SelectItem value="gemini-3-pro-preview">Gemini 3 Pro</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -309,8 +309,8 @@ export function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gemini-2.5-flash-tts">Gemini 2.5 Flash TTS</SelectItem>
-                      <SelectItem value="gemini-2.5-pro-tts">Gemini 2.5 Pro TTS</SelectItem>
+                      <SelectItem value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash TTS</SelectItem>
+                      <SelectItem value="gemini-2.5-pro-preview-tts">Gemini 2.5 Pro TTS</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-text-tertiary">

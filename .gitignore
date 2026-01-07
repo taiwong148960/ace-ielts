@@ -31,3 +31,7 @@ npm-debug.log*
 # Keys (sensitive)
 keys.json
 
+# rules
+.cursor/
+.trae/
+.agent/

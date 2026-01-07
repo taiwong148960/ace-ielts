@@ -100,6 +100,14 @@ async function handleGetBrowsingHistory(req: Request) {
     supabaseAdmin.from("vocabulary_books").select("id, name").in("id", bookIds)
   ])
 
+  if (wordsResult.error) {
+    logger.error("Failed to fetch words details", { userId: user.id }, new Error(wordsResult.error.message))
+  }
+
+  if (booksResult.error) {
+    logger.error("Failed to fetch books details", { userId: user.id }, new Error(booksResult.error.message))
+  }
+
   const wordsMap = new Map((wordsResult.data || []).map((w: { id: string; word: string; book_id: string }) => [w.id, w]))
   const booksMap = new Map((booksResult.data || []).map((b: { id: string; name: string }) => [b.id, b]))
 
@@ -144,11 +152,16 @@ async function handleGetTakeawayStats(req: Request) {
     default: startDate = new Date(0);
   }
 
-  const { data: reviews } = await supabaseAdmin
+  const { data: reviews, error } = await supabaseAdmin
     .from("vocabulary_review_logs")
     .select("word_id")
     .eq("user_id", user.id)
     .gte("reviewed_at", startDate.toISOString())
+
+  if (error) {
+    logger.error("Failed to fetch takeaway stats", { userId: user.id }, new Error(error.message))
+    return errorResponse("Failed to fetch takeaway stats", 500)
+  }
 
   const uniqueWords = reviews ? new Set(reviews.map((r: { word_id: string }) => r.word_id)).size : 0
 

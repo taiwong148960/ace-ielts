@@ -252,6 +252,8 @@
       }
     },
     "learning": {
+      "title": "Learning Session",
+      "loading": "Loading learning session...",
       "wordCard": "Word Card",
       "pronunciation": "Pronunciation",
       "coreDefinition": "Core Definition",
@@ -259,6 +261,8 @@
       "etymology": "Word Etymology",
       "synonyms": "Synonyms",
       "antonyms": "Antonyms",
+      "collocations": "Common Collocations",
+      "topic": "Topic",
       "videoExamples": "Video Examples",
       "prevNext": "prev / next example",
       "spacedRepetition": "Spaced Repetition Grading",
@@ -276,7 +280,12 @@
       "complete": "Session Complete!",
       "wordsReviewed": "Words Reviewed",
       "accuracy": "Accuracy",
-      "finishSession": "Finish Session"
+      "finishSession": "Finish Session",
+      "sessionComplete": "Session Complete!",
+      "sessionCompleteDesc": "Great job! You've completed all words in this session.",
+      "backToBook": "Back to Book",
+      "noWordsToReview": "All Done For Now!",
+      "noWordsToReviewDesc": "You've reviewed all due words. Come back later for more practice!"
     }
   },
   "dashboard": {
