@@ -9,6 +9,24 @@
  */
 
 // ============================================================================
+// Result Type for Error Handling
+// ============================================================================
+
+/**
+ * Result type for structured error handling
+ * Use `return error` for expected failures, use `throw` for unexpected exceptions.
+ * 
+ * @example
+ * async function fetchData(): Promise<Result<Data>> {
+ *   if (!response.ok) return { success: false, error: `API failed: ${response.status}` };
+ *   return { success: true, data: await response.json() };
+ * }
+ */
+export type Result<T> = 
+  | { success: true; data: T } 
+  | { success: false; error: string };
+
+// ============================================================================
 // Constants - MUST match packages/core/src/types/vocabulary.ts
 // ============================================================================
 

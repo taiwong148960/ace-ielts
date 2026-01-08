@@ -59,6 +59,53 @@ After every code modification:
 | Constants | SCREAMING_SNAKE_CASE | `MAX_RETRY_COUNT` |
 | Files | kebab-case for non-components | `query-keys.ts` |
 
+## Supabase Edge Functions Error Handling
+
+### Error Handling Pattern
+Use a **hybrid approach**: top-level `try-catch` + `Result` type for business logic.
+
+| Scenario | Recommended Approach |
+|----------|---------------------|
+| Top-level entry | `try-catch` as safety net |
+| Expected business errors (API failure, validation) | Return `Result` type |
+| Unrecoverable errors (missing config, DB crash) | `throw` |
+| Non-critical errors (audio generation fails but others succeed) | Return `Result` + log |
+
+### Result Type Definition
+```typescript
+type Result<T> = { success: true; data: T } | { success: false; error: string };
+```
+
+### Code Example
+```typescript
+// Top-level: try-catch as safety net
+serve(async (req) => {
+  try {
+    const result = await processRequest(req);
+    return new Response(JSON.stringify(result), { status: 200 });
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500 });
+  }
+});
+
+// Business logic: return Result, don't throw
+async function enrichWord(word: string): Promise<Result<WordData>> {
+  const response = await fetch(API_URL);
+  if (!response.ok) {
+    return { success: false, error: `API failed: ${response.status}` };
+  }
+  return { success: true, data: await response.json() };
+}
+
+// Unrecoverable: throw immediately
+const apiKey = Deno.env.get("API_KEY");
+if (!apiKey) throw new Error("API_KEY is required");
+```
+
+### Core Principle
+> Use `return error` for **expected failures**, use `throw` for **unexpected exceptions**.
+
 ## Import Order
 ```typescript
 // 1. React and external libraries

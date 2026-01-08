@@ -5,6 +5,7 @@ import { Router } from "../_shared/router.ts";
 import {
   DEFAULT_GEMINI_TEXT_MODEL_CONFIG,
   DEFAULT_GEMINI_TTS_MODEL_CONFIG,
+  type Result,
 } from "../_shared/types.ts";
 import { createClient, SupabaseClient } from "../_shared/supabase.ts";
 
@@ -310,6 +311,45 @@ const DEFAULT_VOICE = "Zephyr";
 const GEMINI_VOICES = ["Puck", "Charon", "Kore", "Fenrir", "Aoede", "Zephyr"];
 const MAX_EXECUTION_TIME_MS = 60000;
 
+// Retry configuration for Gemini API 429 errors
+const MAX_RETRIES = 3;
+const INITIAL_BACKOFF_MS = 2000;
+
+/**
+ * Fetch wrapper with exponential backoff retry for 429 (rate limit) errors
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  context: string,
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(url, options);
+
+    if (response.status !== 429) {
+      return response;
+    }
+
+    // 429 rate limit error - retry with backoff
+    if (attempt < MAX_RETRIES) {
+      const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+      logger.warn(`Gemini 429 rate limit hit, retrying in ${backoffMs}ms`, {
+        context,
+        attempt: attempt + 1,
+        maxRetries: MAX_RETRIES,
+      });
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    } else {
+      lastError = new Error(`Gemini API rate limit exceeded after ${MAX_RETRIES} retries`);
+    }
+  }
+
+  // If we exhausted all retries, throw the last error
+  throw lastError || new Error("Unexpected retry loop exit");
+}
+
 async function handleProcessPendingWords(_req: Request) {
   // Service Role Auth (Cron)
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -401,12 +441,29 @@ async function handleProcessPendingWords(_req: Request) {
 
       const userId = (bookWord.vocabulary_books as { user_id: string }).user_id;
 
-      const { wordData, wordAudioPath, exampleAudioPaths } = await enrichWord(
+      const enrichResult = await enrichWord(
         wordRecord.word,
         wordRecord.id,
         userId,
         supabaseAdmin,
       );
+
+      if (!enrichResult.success) {
+        // Expected business error - mark as failed and continue
+        await supabaseAdmin
+          .from("vocabulary_words")
+          .update({
+            import_status: "failed",
+            error_msg: enrichResult.error,
+            locked_by: null,
+          })
+          .eq("id", wordRecord.id);
+        failedCount++;
+        logger.warn("enrichWord returned error", { wordId: wordRecord.id, error: enrichResult.error });
+        continue;
+      }
+
+      const { wordData, wordAudioPath, exampleAudioPaths } = enrichResult.data;
 
       // Merge audio urls into examples
       const examplesWithAudio = wordData.examples.map((ex: ExampleSentence) => {
@@ -578,35 +635,46 @@ function pcmToWav(
 
 /**
  * Generate audio using Gemini TTS API
- * Returns WAV audio as Uint8Array binary data
+ * Returns Result with WAV audio as Uint8Array binary data
  */
 async function generateAudio(
   text: string,
   apiKey: string,
   ttsModel: string,
   voice: string = DEFAULT_VOICE,
-): Promise<Uint8Array> {
+): Promise<Result<Uint8Array>> {
   const url = `${DEFAULT_BASE_URL}/models/${ttsModel}:generateContent`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text }] }],
-      generationConfig: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: voice,
+
+  let response: Response;
+  try {
+    response = await fetchWithRetry(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text }] }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: voice,
+                },
+              },
             },
           },
-        },
+        }),
       },
-    }),
-  });
+      `TTS: ${text.substring(0, 50)}`,
+    );
+  } catch (error) {
+    logger.error("Gemini TTS API retry exhausted", { error: (error as Error).message });
+    return { success: false, error: (error as Error).message };
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -614,7 +682,7 @@ async function generateAudio(
       status: response.status,
       error: errorText,
     });
-    throw new Error(`Gemini TTS API error: ${response.status}`);
+    return { success: false, error: `Gemini TTS API error: ${response.status}` };
   }
 
   const data = await response.json();
@@ -622,7 +690,7 @@ async function generateAudio(
   // Extract audio data from response
   const inlineData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
   if (!inlineData || !inlineData.data) {
-    throw new Error("No audio data in Gemini TTS response");
+    return { success: false, error: "No audio data in Gemini TTS response" };
   }
 
   // Decode base64 PCM data
@@ -634,18 +702,18 @@ async function generateAudio(
   }
 
   // Convert PCM to WAV and return binary data
-  return pcmToWav(pcmBytes);
+  return { success: true, data: pcmToWav(pcmBytes) };
 }
 
 /**
  * Upload audio file to Supabase Storage
- * Returns relative path of the uploaded file (not full URL)
+ * Returns Result with relative path of the uploaded file (not full URL)
  */
 async function uploadAudioToStorage(
   audioData: Uint8Array,
   filePath: string,
   supabaseAdmin: SupabaseClient,
-): Promise<string> {
+): Promise<Result<string>> {
   const BUCKET_NAME = "vocabulary-audio";
 
   // Ensure bucket exists (idempotent)
@@ -653,7 +721,7 @@ async function uploadAudioToStorage(
     .listBuckets();
   if (listError) {
     logger.error("Failed to list buckets", {}, listError as Error);
-    throw new Error("Failed to access storage");
+    return { success: false, error: "Failed to access storage" };
   }
 
   const bucketExists = buckets?.some((b: { name: string }) =>
@@ -670,7 +738,7 @@ async function uploadAudioToStorage(
     );
     if (createError) {
       logger.error("Failed to create bucket", {}, createError as Error);
-      throw new Error("Failed to create storage bucket");
+      return { success: false, error: "Failed to create storage bucket" };
     }
     logger.info("Created storage bucket", { bucket: BUCKET_NAME });
   }
@@ -685,53 +753,53 @@ async function uploadAudioToStorage(
 
   if (uploadError) {
     logger.error("Failed to upload audio", { filePath }, uploadError as Error);
-    throw new Error(`Failed to upload audio: ${uploadError.message}`);
+    return { success: false, error: `Failed to upload audio: ${uploadError.message}` };
   }
 
   // Return the relative path (frontend will generate full URL)
   logger.info("Audio uploaded successfully", { filePath });
-  return filePath;
+  return { success: true, data: filePath };
 }
+
+type EnrichWordResult = {
+  wordData: WordAnalysisResult;
+  wordAudioPath: string | null;
+  exampleAudioPaths: { sentence: string; audio_path: string }[] | null;
+};
 
 async function enrichWord(
   word: string,
   wordId: string,
   userId: string,
   supabaseAdmin: SupabaseClient,
-): Promise<
-  {
-    wordData: WordAnalysisResult;
-    wordAudioPath: string | null;
-    exampleAudioPaths: { sentence: string; audio_path: string }[] | null;
+): Promise<Result<EnrichWordResult>> {
+  // API Key must be configured in Supabase environment variables
+  const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!geminiApiKey) {
+    // Unrecoverable error - throw immediately (will be caught by top-level)
+    throw new Error(
+      "GEMINI_API_KEY not configured in Supabase environment variables",
+    );
   }
-> {
-  try {
-    // API Key must be configured in Supabase environment variables
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!geminiApiKey) {
-      throw new Error(
-        "GEMINI_API_KEY not configured in Supabase environment variables",
-      );
-    }
 
-    // Get user's model configuration, fallback to defaults if not found
-    const { data: userSettings, error: settingsError } = await supabaseAdmin
-      .from("user_settings")
-      .select("gemini_model_config")
-      .eq("user_id", userId)
-      .single();
+  // Get user's model configuration, fallback to defaults if not found
+  const { data: userSettings, error: settingsError } = await supabaseAdmin
+    .from("user_settings")
+    .select("gemini_model_config")
+    .eq("user_id", userId)
+    .single();
 
-    if (settingsError && settingsError.code !== "PGRST116") {
-      // PGRST116 = no rows returned, which is fine (use defaults)
-      logger.warn("Failed to fetch user settings", { userId, error: settingsError.message });
-    }
+  if (settingsError && settingsError.code !== "PGRST116") {
+    // PGRST116 = no rows returned, which is fine (use defaults)
+    logger.warn("Failed to fetch user settings", { userId, error: settingsError.message });
+  }
 
-    const textModelConfig = userSettings?.gemini_model_config?.textModel ||
-      DEFAULT_GEMINI_TEXT_MODEL_CONFIG;
-    const ttsModelConfig = userSettings?.gemini_model_config?.ttsModel ||
-      DEFAULT_GEMINI_TTS_MODEL_CONFIG;
-    const model = textModelConfig.model;
-    const ttsModel = ttsModelConfig.model;
+  const textModelConfig = userSettings?.gemini_model_config?.textModel ||
+    DEFAULT_GEMINI_TEXT_MODEL_CONFIG;
+  const ttsModelConfig = userSettings?.gemini_model_config?.ttsModel ||
+    DEFAULT_GEMINI_TTS_MODEL_CONFIG;
+  const model = textModelConfig.model;
+  const ttsModel = ttsModelConfig.model;
 
   const prompt = `
       Role: Expert IELTS vocabulary tutor with access to authentic IELTS exam materials.
@@ -754,39 +822,51 @@ async function enrichWord(
   `;
 
   const url = `${DEFAULT_BASE_URL}/models/${model}:generateContent`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": geminiApiKey,
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: textModelConfig.temperature,
-        topK: textModelConfig.topK,
-        topP: textModelConfig.topP,
-        maxOutputTokens: textModelConfig.maxOutputTokens,
-      },
-    }),
-  });
 
-  if (!response.ok) throw new Error(`Gemini API error: ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetchWithRetry(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": geminiApiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: RESPONSE_SCHEMA,
+            temperature: textModelConfig.temperature,
+            topK: textModelConfig.topK,
+            topP: textModelConfig.topP,
+            maxOutputTokens: textModelConfig.maxOutputTokens,
+          },
+        }),
+      },
+      `Text: ${word}`,
+    );
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+
+  if (!response.ok) {
+    return { success: false, error: `Gemini API error: ${response.status}` };
+  }
+
   const data = await response.json();
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!content && data.candidates?.[0]?.finishReason) {
-    throw new Error(
-      `Gemini blocked content: ${data.candidates[0].finishReason}`,
-    );
+    return { success: false, error: `Gemini blocked content: ${data.candidates[0].finishReason}` };
   }
-  if (!content) throw new Error("No content from Gemini");
+  if (!content) {
+    return { success: false, error: "No content from Gemini" };
+  }
 
   let wordData: WordAnalysisResult;
   try {
     // Defensive cleanup: remove markdown code block wrappers if present
-    // (shouldn't happen with responseMimeType: "application/json", but can occur occasionally)
     let cleanContent = content;
     if (content.startsWith("```") || content.includes("```json")) {
       cleanContent = content
@@ -796,16 +876,13 @@ async function enrichWord(
     }
     wordData = JSON.parse(cleanContent);
   } catch (parseError) {
-    // Log detailed error information for debugging
     logger.error("JSON Parse Error", {
       error: (parseError as Error).message,
       contentPreview: content?.substring(0, 500),
       contentLength: content?.length,
       word,
     });
-    throw new Error(
-      `Failed to parse Gemini response: ${(parseError as Error).message}`,
-    );
+    return { success: false, error: `Failed to parse Gemini response: ${(parseError as Error).message}` };
   }
 
   // Validate required fields in the parsed response
@@ -819,77 +896,69 @@ async function enrichWord(
       hasDefinitions: !!wordData.definitions,
       word,
     });
-    throw new Error("Gemini response missing required fields");
+    return { success: false, error: "Gemini response missing required fields" };
   }
 
-  // Generate and upload audio files to Storage
-  let wordAudioPath: string | null = null;
-  let exampleAudioPaths: { sentence: string; audio_path: string }[] | null =
-    null;
-  try {
-    // Generate word audio with professional American English pronunciation
-    const wordAudioData = await generateAudio(
-      `Say in a professional American accent, loud and clear: "${word}"`,
-      geminiApiKey,
-      ttsModel,
-      "Zephyr",
-    );
-    const wordStoragePath = `${userId}/${wordId}/word.wav`;
-    wordAudioPath = await uploadAudioToStorage(
-      wordAudioData,
-      wordStoragePath,
-      supabaseAdmin,
-    );
+  // Generate and upload audio files to Storage (all audio generation is required)
+  let wordAudioPath: string;
+  const exampleAudioPaths: { sentence: string; audio_path: string }[] = [];
 
-    // Generate example sentence audios (serially to avoid rate limits)
-    if (wordData.examples && wordData.examples.length > 0) {
-      exampleAudioPaths = [];
-      for (const [index, ex] of wordData.examples.entries()) {
-        try {
-          const randomVoice =
-            GEMINI_VOICES[Math.floor(Math.random() * GEMINI_VOICES.length)];
-          // Randomly choose American or British accent for IELTS listening exam simulation
-          const accent = Math.random() < 0.5 ? "American" : "British";
-          const exampleAudioData = await generateAudio(
-            `Say in a professional ${accent} accent, loud and clear like IELTS listening: "${ex.sentence}"`,
-            geminiApiKey,
-            ttsModel,
-            randomVoice,
-          );
-          const exampleStoragePath =
-            `${userId}/${wordId}/example-${index}.wav`;
-          const audioPath = await uploadAudioToStorage(
-            exampleAudioData,
-            exampleStoragePath,
-            supabaseAdmin,
-          );
-          exampleAudioPaths.push({ sentence: ex.sentence, audio_path: audioPath });
-        } catch (error) {
-          logger.warn("Failed to generate/upload example audio", {
-            index,
-            sentence: ex.sentence,
-          }, error as Error);
-          exampleAudioPaths.push({ sentence: ex.sentence, audio_path: "" });
-        }
+  // Generate word audio with professional American English pronunciation
+  const wordAudioResult = await generateAudio(
+    `Say in a professional American accent, loud and clear: "${word}"`,
+    geminiApiKey,
+    ttsModel,
+    "Zephyr",
+  );
+
+  if (!wordAudioResult.success) {
+    return { success: false, error: `Failed to generate word audio: ${wordAudioResult.error}` };
+  }
+
+  const wordStoragePath = `${userId}/${wordId}/word.wav`;
+  const wordUploadResult = await uploadAudioToStorage(
+    wordAudioResult.data,
+    wordStoragePath,
+    supabaseAdmin,
+  );
+
+  if (!wordUploadResult.success) {
+    return { success: false, error: `Failed to upload word audio: ${wordUploadResult.error}` };
+  }
+
+  wordAudioPath = wordUploadResult.data;
+
+  // Generate example sentence audios (serially to avoid rate limits)
+  if (wordData.examples && wordData.examples.length > 0) {
+    for (const [index, ex] of wordData.examples.entries()) {
+      const randomVoice = GEMINI_VOICES[Math.floor(Math.random() * GEMINI_VOICES.length)];
+      const accent = Math.random() < 0.5 ? "American" : "British";
+
+      const exampleAudioResult = await generateAudio(
+        `Say in a professional ${accent} accent, loud and clear like IELTS listening: "${ex.sentence}"`,
+        geminiApiKey,
+        ttsModel,
+        randomVoice,
+      );
+
+      if (!exampleAudioResult.success) {
+        return { success: false, error: `Failed to generate example audio [${index}]: ${exampleAudioResult.error}` };
       }
+
+      const exampleStoragePath = `${userId}/${wordId}/example-${index}.wav`;
+      const exampleUploadResult = await uploadAudioToStorage(
+        exampleAudioResult.data,
+        exampleStoragePath,
+        supabaseAdmin,
+      );
+
+      if (!exampleUploadResult.success) {
+        return { success: false, error: `Failed to upload example audio [${index}]: ${exampleUploadResult.error}` };
+      }
+
+      exampleAudioPaths.push({ sentence: ex.sentence, audio_path: exampleUploadResult.data });
     }
-  } catch (e) {
-    logger.warn("Audio generation/upload failed", { wordId }, e as Error);
   }
 
-    return { wordData, wordAudioPath, exampleAudioPaths };
-  } catch (error) {
-    // Log the error with context
-    logger.error("enrichWord failed", {
-      word,
-      wordId,
-      userId,
-      errorMessage: error instanceof Error ? error.message : "Unknown error",
-    }, error as Error);
-
-    // Rethrow with structured error information for the caller
-    throw new Error(
-      `Failed to enrich word "${word}": ${error instanceof Error ? error.message : "Unknown error"}`
-    );
-  }
+  return { success: true, data: { wordData, wordAudioPath, exampleAudioPaths } };
 }
